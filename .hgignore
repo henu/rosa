@@ -1,0 +1,7 @@
+syntax: glob
+
+bin/*
+obj/*
+rosa.cbp
+rosa.depend
+rosa.layout
