@@ -135,21 +135,20 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 	bool orphan_nodes_flag_before = getOrphanNodesFlag();
 	setOrphanNodesFlag(true);
 
+	Nodes::Folder new_folder = fpath.back();
+	Hpp::ByteV root_now;
+
 	if (get_name_from_dest) {
 		// Read file hierarchy as Children of Folder
 		Nodes::Folder::Children new_children;
 // TODO: Ask here what to overwrite/discard/join/etc.!
 		readFileHierarchiesAsFolderChildren(new_children, src, strm);
 
-		// Change the only child to have different name
+		// Set the only child
 		HppAssert(new_children.size() == 1, "There should be exactly one child!");
-		Nodes::Folder::Child new_child = new_children.begin()->second;
-		new_children.clear();
-		new_children[dest.getFilename()] = new_child;
+		new_folder.setChild(dest.getFilename(), new_children[0]);
 
-		// Add these newly created files/folders/symlinks
-		// to children of last folder in folder path.
-		addToFoldersPath(fpath, dest_fixed, new_children);
+		root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
 
 	} else {
 		// Read file hierarchy as Children of Folder
@@ -157,10 +156,19 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 // TODO: Ask here what to overwrite/discard/join/etc.!
 		readFileHierarchiesAsFolderChildren(new_children, src, strm);
 
-		// Add these newly created files/folders/symlinks
-		// to children of last folder in folder path.
-		addToFoldersPath(fpath, dest_fixed, new_children);
+		new_folder.addChildren(new_children);
 
+		root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
+	}
+
+	// Replace and clean old root
+	Hpp::ByteV old_root = root_ref;
+	replaceRootNode(root_now);
+	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
+	HppAssert(metadata_loc >= 0, "Old root node not found!");
+	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+	if (metadata.refs == 0) {
+		clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
 	}
 
 	setOrphanNodesFlag(orphan_nodes_flag_before);
@@ -278,13 +286,13 @@ void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fs
 
 	// First find a path of Folders to the parent of "path".
 	Hpp::Path parent = path.getParent();
-	Nodes::Folders folders = getFoldersToPath(parent);
+	Nodes::Folders fpath = getFoldersToPath(parent);
 
 	std::string new_folder_name = path.getFilename();
 
 	// Ensure there is no child with same name already
-	HppAssert(!folders.empty(), "No folders!");
-	if (folders.back().hasChild(new_folder_name)) {
+	HppAssert(!fpath.empty(), "No folders!");
+	if (fpath.back().hasChild(new_folder_name)) {
 		throw Hpp::Exception("Folder already exists!");
 	}
 
@@ -299,17 +307,24 @@ void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fs
 	// folder. Every old Folder will be slightly modified. This
 	// means also the root node, which will be replaced at the
 	// end. First create the actual new folder.
-	Nodes::Folder new_folder;
-	spawnOrGetNode(&new_folder);
+	Nodes::Folder empty_folder;
+	spawnOrGetNode(&empty_folder);
 
-	Nodes::Folder::Children new_children;
-	Nodes::Folder::Child folder_as_child;
-	folder_as_child.type = Nodes::FSTYPE_FOLDER;
-	folder_as_child.hash = new_folder.getHash();
-	HppAssert(folder_as_child.hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
-	folder_as_child.fsmetadata = fsmetadata;
-	new_children[new_folder_name] = folder_as_child;
-	addToFoldersPath(folders, parent, new_children);
+	// Replace last folder from the path
+	// with one that has the empty as child.
+	Nodes::Folder parent_of_empty = fpath.back();
+	parent_of_empty.setChild(new_folder_name, Nodes::FSTYPE_FOLDER, empty_folder.getHash(), fsmetadata);
+	Hpp::ByteV root_now = replaceLastFolder(fpath, parent, parent_of_empty);
+
+	// Replace and clean old root
+	Hpp::ByteV old_root = root_ref;
+	replaceRootNode(root_now);
+	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
+	HppAssert(metadata_loc >= 0, "Old root node not found!");
+	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+	if (metadata.refs == 0) {
+		clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
+	}
 
 	setOrphanNodesFlag(orphan_nodes_flag_before);
 
@@ -1112,12 +1127,20 @@ Hpp::ByteV Archive::replaceLastFolder(Nodes::Folders const& fpath,
                                       Hpp::Path const& path,
                                       Nodes::Folder folder)
 {
+	HppAssert(!fpath.empty(), "No folders!");
 
 	// Ensure this new folder exists
 	spawnOrGetNode(&folder);
 
+	// If there is only one folder (root) in path,
+	// then return this folder immediately.
+	if (fpath.size() == 1) {
+		return folder.getHash();
+	}
+
 	// Get info about this new folder that will be used
 	Hpp::ByteV new_folder = folder.getHash();
+	HppAssert(fpath.size() - 2 < path.partsSize(), "Overflow!");
 	std::string new_folder_name = path[fpath.size() - 2];
 	Nodes::FsMetadata new_folder_fsmetadata = fpath[fpath.size() - 2].getChildFsMetadata(new_folder_name);
 
@@ -2059,50 +2082,6 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 	}
 
 	throw Hpp::Exception("Unable to archive " + source.toString() + " because it has invalid type!");
-}
-
-void Archive::addToFoldersPath(Nodes::Folders const& folders, Hpp::Path const& path, Nodes::Folder::Children const& children)
-{
-	// Go folder path through from deepest to the root.
-	Nodes::Folder::Children new_children = children;
-	Nodes::Folder::Child folder_as_child;
-	for (ssize_t folders_id = folders.size() - 1;
-	     folders_id >= 0;
-	     -- folders_id) {
-		Nodes::Folder folder = folders[folders_id];
-
-		// Inform this folder about its new children
-		folder.addChildren(new_children);
-
-		// Add this folder to the archive
-		spawnOrGetNode(&folder);
-
-		// Hash is needed anyway
-		folder_as_child.hash = folder.getHash();
-		HppAssert(folder_as_child.hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
-
-		// Get specs of this Folder for its parent, if it exists
-		if (folders_id > 0) {
-			std::string folder_name = path[folders_id - 1];
-			folder_as_child.type = Nodes::FSTYPE_FOLDER;
-			folder_as_child.fsmetadata = folders[folders_id - 1].getChildFsMetadata(folder_name);
-			// Convert this single folder to vector of one item.
-			new_children.clear();
-			new_children[folder_name] = folder_as_child;
-		}
-	}
-
-	Hpp::ByteV old_root = root_ref;
-	replaceRootNode(folder_as_child.hash);
-
-	// If old root Node became orphan, then remove it.
-	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
-	HppAssert(metadata_loc >= 0, "Old root should exist!");
-	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
-	if (metadata.refs == 0) {
-		clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
-	}
-
 }
 
 void Archive::extractRecursively(Hpp::ByteV const& hash,

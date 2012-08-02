@@ -284,13 +284,6 @@ private:
 	// in archive. Returns hash of given file/folder/symlink and type.
 	void readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source, std::ostream* strm);
 
-	// Sets given children as the children of last Folder in path of
-	// Folders from the root. All of Folders will be modified and root
-	// updated. Existing children will be replaced. "path" is absolute
-	// Path from root. It is used to get names for Folders.
-// TODO: Replace this with replaceLastFolder()!
-	void addToFoldersPath(Nodes::Folders const& folders, Hpp::Path const& path, Nodes::Folder::Children const& children);
-
 	// Extracts given Node to given target. If Node is Folder, then
 	// this function is called recursively for all of its children.
 	void extractRecursively(Hpp::ByteV const& hash,
