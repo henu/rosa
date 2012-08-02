@@ -2097,9 +2097,9 @@ void Archive::addToFoldersPath(Nodes::Folders const& folders, Hpp::Path const& p
 
 	// If old root Node became orphan, then remove it.
 	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
-	if (metadata_loc >= 0) {
-		Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
-		HppAssert(metadata.refs == 0, "Reference count should be zero!");
+	HppAssert(metadata_loc >= 0, "Old root should exist!");
+	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+	if (metadata.refs == 0) {
 		clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
 	}
 
