@@ -5,3 +5,6 @@ obj/*
 rosa.cbp
 rosa.depend
 rosa.layout
+src/*.o
+src/*/*.o
+rosa
