@@ -36,6 +36,11 @@ Folder::Folder(Hpp::ByteV const& serialized)
 
 }
 
+void Folder::setChild(std::string const& child_name, Child const& child)
+{
+	setChild(child_name, child.type, child.hash, child.fsmetadata);
+}
+
 void Folder::setChild(std::string const& child_name, FsType child_type, Hpp::ByteV child_hash, FsMetadata const& child_fsmetadata)
 {
 	HppAssert(child_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");

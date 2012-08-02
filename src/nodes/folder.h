@@ -29,6 +29,7 @@ public:
 
 	// Child modifiers. addChildren will not remove old ones,
 	// but it will replace them, if same names are given.
+	void setChild(std::string const& child_name, Child const& child);
 	void setChild(std::string const& child_name, FsType child_type, Hpp::ByteV child_hash, FsMetadata const& child_fsmetadata);
 	void addChildren(Children const& children);
 	void removeChild(std::string const& child_name);
