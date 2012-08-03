@@ -19,7 +19,7 @@ OBJ = $(SRC:%.cc=src/%.o)
 all: rosa
 
 clean:
-	rm -f $(OBJ) core
+	rm -f $(OBJ) core rosa
 
 rosa: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LIBS)
