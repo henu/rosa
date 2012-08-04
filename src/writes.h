@@ -8,6 +8,11 @@
 // Type for writes of bytes to different parts of file.
 typedef std::map< uint64_t, Hpp::ByteV > Writes;
 
+Writes writesJournalFlag(uint64_t journal_flag_loc, bool journal_exists);
+
+// Use absolute position in bytes
+Writes writesJournal(uint64_t journal_info_begin, uint64_t journal_begin, Writes const& journal);
+
 inline Writes& operator+=(Writes& w1, Writes const& w2)
 {
 	for (Writes::const_iterator w2_it = w2.begin();

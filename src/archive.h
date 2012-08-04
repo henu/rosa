@@ -8,9 +8,9 @@
 #include "nodes/metadata.h"
 #include "writes.h"
 #include "types.h"
+#include "fileio.h"
 
 #include <hpp/path.h>
-#include <fstream>
 #include <ostream>
 #include <map>
 
@@ -64,7 +64,7 @@ public:
 	inline uint64_t getDataSectionEnd(void) const { return datasec_end; }
 	uint64_t getNextDataEntry(uint64_t data_entry_loc);
 	Nodes::DataEntry getDataEntry(uint64_t loc, bool read_data, bool extract_data = false);
-	inline bool getJournalFlag(void) const { return journal_exists; }
+	inline bool getJournalFlag(void) const { return io.getJournalFlag(); }
 	uint64_t getJournalLocation(void);
 	Nodes::Folder getRootFolder(void);
 	inline bool getOrphanNodesFlag(void) const { return orphan_nodes_exists; }
@@ -79,6 +79,10 @@ public:
 private:
 
 	enum Section {
+		SECTION_IDENTIFIER,
+		SECTION_VERSION,
+		SECTION_CRYPTO_FLAG,
+		SECTION_SALT,
 		SECTION_PASSWORD_VERIFIER,
 		SECTION_JOURNAL_FLAG,
 		SECTION_JOURNAL_INFO,
@@ -98,8 +102,7 @@ private:
 	};
 	typedef std::vector< NodeInfo > NodeInfos;
 
-
-	std::fstream file;
+	FileIO io;
 
 	// Crypto stuff
 	Hpp::ByteV crypto_key;
@@ -111,10 +114,10 @@ private:
 	// Amount of nodes in both sorted and unsorted metadata sections.
 	uint64_t metas_s_size;
 	uint64_t metas_us_size;
+// TODO: In future, store this only to FileIO, if it looks clever!
 	uint64_t datasec_end;
 
-	// Is there journal or orphan nodes
-	bool journal_exists;
+	// Is there orphan nodes
 	bool orphan_nodes_exists;
 
 	// Opens file and closes old one if its open. Also resets everything.
@@ -192,11 +195,6 @@ private:
 
 	Writes writesPasswordVerifier(void);
 
-	Writes writesJournalFlag(bool journal_exists);
-
-	// Use absolute position in bytes
-	Writes writesJournal(uint64_t journal_info_begin, Writes const& journal);
-
 	Writes writesOrphanNodesFlag(bool orphans_exists);
 
 	// Sets reference count of specific node
@@ -250,18 +248,10 @@ private:
 	                                size_t metadata_loc,
 	                                Nodes::Type type);
 
-	void clearJournalFlag(void);
-
 	void setOrphanNodesFlag(bool flag);
 
 	// Get position of specific section in absolute format
 	size_t getSectionBegin(Section sec) const;
-
-	void ensureArchiveSize(size_t size);
-
-	// Reads one encryptable part from file. If encryption is
-	// turned on, then the part will be decrypted automatically.
-	Hpp::ByteV readPart(size_t offset, size_t size);
 
 	// Moves specific non-empty data entry to another place. Previous
 	// empty data entries are needed, so they can be grown/shrinken.
@@ -269,12 +259,6 @@ private:
 	// them to same as source/destination.
 	void moveData(uint64_t src, uint64_t dest,
 	              uint32_t empty_b4_src, uint32_t empty_b4_dest);
-
-	// Applies Writes to file
-	void doWrites(Writes const& writes, bool do_not_crypt = false);
-
-	// Applies first journal, then writes, and finally clear journal flag.
-	void doJournalAndWrites(Writes const& writes);
 
 	// Reads multiple files/folders/symlinks, converts them to Nodes
 	// in archive, and returns those new Nodes as Children of Folder.
@@ -293,9 +277,6 @@ private:
 
 	// Generates crypto key from password and salt
 	static Hpp::ByteV generateCryptoKey(std::string const& password, Hpp::ByteV const& salt);
-
-	// Generates initial vector for cipher, based on file offset
-	static Hpp::ByteV generateCryptoIV(size_t offset);
 
 };
 

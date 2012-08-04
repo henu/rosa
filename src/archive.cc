@@ -11,8 +11,6 @@
 #include <hpp/random.h>
 #include <hpp/sha256hasher.h>
 #include <hpp/sha512hasher.h>
-#include <hpp/aes256ofbcipher.h>
-#include <hpp/misc.h>
 #include <hpp/compressor.h>
 #include <cstring>
 #include <set>
@@ -21,7 +19,6 @@ Archive::Archive(void) :
 metas_s_size(0),
 metas_us_size(0),
 datasec_end(0),
-journal_exists(false),
 orphan_nodes_exists(false)
 {
 }
@@ -40,37 +37,45 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	closeAndOpenFile(path);
 
 	// Initialize empty archive
+	Writes writes;
 
 	// Identifier
 	size_t const IDENTIFIER_LEN = strlen(ARCHIVE_IDENTIFIER);
-	file.write(ARCHIVE_IDENTIFIER, IDENTIFIER_LEN);
+	writes[0] = Hpp::ByteV(ARCHIVE_IDENTIFIER, ARCHIVE_IDENTIFIER + IDENTIFIER_LEN);
 
 	// Version
-	file.put(0);
+	writes[IDENTIFIER_LEN] = Hpp::ByteV(1, 0);
 
 	// Crypto flag and possible salt
 	Hpp::ByteV salt;
 	if (password.empty()) {
-		file.put(0);
+		writes[IDENTIFIER_LEN + 1] = Hpp::ByteV(1, 0);
 	} else {
-		file.put(1);
+		writes[IDENTIFIER_LEN + 1] = Hpp::ByteV(1, 1);
 		salt = Hpp::randomSecureData(SALT_SIZE);
-		file.write((char*)&salt[0], salt.size());
+		writes[IDENTIFIER_LEN + 2] = salt;
 	}
+
+	// This is the end of part that is always
+	// written as plain text, so do writes now.
+	io.doWrites(writes, true);
 
 	// If password is used, then generate crypto key and password verifier
 	if (!password.empty()) {
 		crypto_key = generateCryptoKey(password, salt);
 
+		// Inform FileIO about this
+		io.enableCrypto(crypto_key);
+
 		// Create new password verifier and write it to the disk.
 		crypto_password_verifier = Hpp::randomSecureData(PASSWORD_VERIFIER_SIZE / 2);
-		doWrites(writesPasswordVerifier());
+		io.doWrites(writesPasswordVerifier());
 
 	}
 
-	doWrites(writesJournalFlag(false));
+	io.initAndWriteJournalFlagToFalse();
 
-	doWrites(writesJournal(Hpp::randomNBitInt(64), Writes()));
+	io.doWrites(writesJournal(getSectionBegin(SECTION_JOURNAL_INFO), Hpp::randomNBitInt(64), Writes()));
 
 	setOrphanNodesFlag(true);
 
@@ -80,19 +85,23 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	metas_s_size = 0;
 	metas_us_size = 0;
 	datasec_end = getSectionBegin(SECTION_DATA);
-	doWrites(writesRootRefAndCounts());
+
+	// Inform FileIO about new data end
+	io.setEndOfData(datasec_end);
+
+	io.doWrites(writesRootRefAndCounts());
 
 	// Spawn empty Folder node to serve as root node
 	Nodes::Folder folder;
 	spawnOrGetNode(&folder);
 	root_ref = folder.getHash();
-	doWrites(writesSetNodeRefs(root_ref, 1));
-	doWrites(writesRootRefAndCounts());
+	io.doWrites(writesSetNodeRefs(root_ref, 1));
+	io.doWrites(writesRootRefAndCounts());
 
 	setOrphanNodesFlag(false);
 
 	// Write to disk
-	file.flush();
+	io.flush();
 
 }
 
@@ -278,7 +287,7 @@ void Archive::remove(Paths const& paths, std::ostream* strm)
 	setOrphanNodesFlag(orphan_nodes_flag_before);
 
 	// Write to disk
-	file.flush();
+	io.flush();
 }
 
 void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fsmetadata)
@@ -332,38 +341,14 @@ void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fs
 
 void Archive::finishPossibleInterruptedJournal(void)
 {
-	if (!getJournalFlag()) {
-		return;
+	if (io.finishPossibleInterruptedJournal()) {
+
+		// Because state of file has changed, it needs to be loaded again.
+		loadStateFromFile("");
+
+		HppAssert(verifyDataentries(), "Data is failed after applying of interrupted journal!");
+
 	}
-
-	// Read serialized journal
-	uint64_t journal_loc = getJournalLocation();
-	uint64_t journal_srz_size = Hpp::cStrToUInt64(&readPart(journal_loc, 8)[0]);
-	Hpp::ByteV journal_srz = readPart(journal_loc + 8, journal_srz_size);
-
-	// Deserialize journal
-	Hpp::ByteV::const_iterator journal_srz_it = journal_srz.begin();
-	Writes journal;
-	while (journal_srz_it != journal_srz.end()) {
-		uint64_t begin = Hpp::deserializeUInt64(journal_srz_it, journal_srz.end());
-		uint32_t size = Hpp::deserializeUInt32(journal_srz_it, journal_srz.end());
-		if (journal.find(begin) != journal.end()) {
-			throw Hpp::Exception("Invalid journal! Multiple writes begin from same location!");
-		}
-		journal[begin] = Hpp::deserializeByteV(journal_srz_it, journal_srz.end(), size);
-	}
-
-	// Do writes
-	doWrites(journal);
-
-	// Finally clear journal flag
-	clearJournalFlag();
-
-	// Because state of file has changed, it needs to be loaded again.
-	loadStateFromFile("");
-
-	HppAssert(verifyDataentries(), "Data is failed after applying of interrupted journal!");
-
 }
 
 void Archive::optimizeMetadata(void)
@@ -384,7 +369,8 @@ void Archive::optimizeMetadata(void)
 			-- metas_s_size;
 			++ metas_us_size;
 		}
-		doJournalAndWrites(writesRootRefAndCounts());
+		io.doJournalAndWrites(writesRootRefAndCounts());
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 		// Then, if needed, allocate more space for unsorted metadata
 		ssize_t metas_us_size_target = metadatas_to_sort * 2;
@@ -412,7 +398,8 @@ void Archive::optimizeMetadata(void)
 				Writes writes;
 				writes += writesMetadata(empty_metadata, cleaner);
 				writes += writesMetadata(metadata, next_cleaner_dump_pos);
-				doJournalAndWrites(writes);
+				io.doJournalAndWrites(writes);
+				HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 				-- next_cleaner_dump_pos;
 			}
 			// This slot is cleaned, move to previous one
@@ -457,14 +444,16 @@ void Archive::optimizeMetadata(void)
 
 				++ target_pos;
 			}
-			doJournalAndWrites(writes);
+			io.doJournalAndWrites(writes);
+			HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 		}
 
 		// Minimize unsorted section and increase size of sorted one
 		size_t metas_s_oldsize = metas_s_size;
 		metas_s_size += metas_us_size - metadatas_to_sort;
 		metas_us_size = metadatas_to_sort;
-		doJournalAndWrites(writesRootRefAndCounts());
+		io.doJournalAndWrites(writesRootRefAndCounts());
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 		// Now move combine all metadatas to sorted section
 		ssize_t s_read = (ssize_t)metas_s_oldsize - 1;
@@ -501,7 +490,8 @@ void Archive::optimizeMetadata(void)
 				-- write;
 				s_meta = getNodeMetadata(s_read);
 			}
-			doJournalAndWrites(writes);
+			io.doJournalAndWrites(writes);
+			HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 		}
 
 	}
@@ -523,13 +513,15 @@ void Archive::optimizeMetadata(void)
 		Writes writes;
 		writes += writesMetadata(empty_metadata, read);
 		writes += writesMetadata(metadata, write);
-		doJournalAndWrites(writes);
+		io.doJournalAndWrites(writes);
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 		++ read;
 		++ write;
 	}
 	metas_us_size += (metas_s_size - write);
 	metas_s_size = write;
-	doJournalAndWrites(writesRootRefAndCounts());
+	io.doJournalAndWrites(writesRootRefAndCounts());
+	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 	// Shrink empty unsorted section to zero
 	if (metas_us_size > 0) {
@@ -538,7 +530,8 @@ void Archive::optimizeMetadata(void)
 		metas_us_size = 0;
 		writes += writesEmpty(getSectionBegin(SECTION_DATA), metas_us_oldsize * Nodes::Metadata::ENTRY_SIZE - Nodes::DataEntry::HEADER_SIZE, true);
 		writes += writesRootRefAndCounts();
-		doJournalAndWrites(writes);
+		io.doJournalAndWrites(writes);
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 	}
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
@@ -574,7 +567,7 @@ Nodes::DataEntry Archive::getDataEntry(uint64_t loc, bool read_data, bool extrac
 	if (loc < getSectionBegin(SECTION_DATA)) {
 		throw Hpp::Exception("Data section underflow!");
 	}
-	Hpp::ByteV de_header = readPart(loc, Nodes::DataEntry::HEADER_SIZE);
+	Hpp::ByteV de_header = io.readPart(loc, Nodes::DataEntry::HEADER_SIZE);
 	Nodes::DataEntry result(de_header);
 	if (loc + Nodes::DataEntry::HEADER_SIZE + result.size > datasec_end) {
 		throw Hpp::Exception("Invalid data entry! Its size seems to overflow beyond data section!");
@@ -583,7 +576,7 @@ Nodes::DataEntry Archive::getDataEntry(uint64_t loc, bool read_data, bool extrac
 		if (result.empty) {
 			throw Hpp::Exception("Trying to read data of empty dataentry!");
 		}
-		result.data = readPart(loc + Nodes::DataEntry::HEADER_SIZE, result.size);
+		result.data = io.readPart(loc + Nodes::DataEntry::HEADER_SIZE, result.size);
 		if (extract_data) {
 			// Read and extract data
 			Hpp::Decompressor decompressor;
@@ -603,7 +596,7 @@ Nodes::DataEntry Archive::getDataEntry(uint64_t loc, bool read_data, bool extrac
 
 uint64_t Archive::getJournalLocation(void)
 {
-	Hpp::ByteV journal_loc_srz = readPart(getSectionBegin(SECTION_JOURNAL_INFO), 8);
+	Hpp::ByteV journal_loc_srz = io.readPart(getSectionBegin(SECTION_JOURNAL_INFO), 8);
 	return Hpp::cStrToUInt64(&journal_loc_srz[0]);
 }
 
@@ -706,66 +699,46 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 
 void Archive::closeAndOpenFile(Hpp::Path const& path)
 {
-	// Close possible old file
-	if (file.is_open()) {
-		file.close();
-	}
-
-	// If file already exists, then do not use trunc
-	std::ios_base::openmode openmode = std::ios_base::binary | std::ios_base::in | std::ios_base::out;
-	if (!path.exists()) {
-		openmode |= std::ios_base::trunc;
-	}
-
-	file.open(path.toString().c_str(), openmode);
-	if (!file.is_open()) {
-		throw Hpp::Exception("Unable to open archive \"" + path.toString(true) + "\"!");
-	}
-
+	io.closeAndOpenFile(path);
 }
 
 void Archive::loadStateFromFile(std::string const& password)
 {
-	HppAssert(file.is_open(), "File is not open!");
-
-	file.seekg(0, std::ios_base::beg);
 
 	// Make sure the file contains valid data
 
 	// Identifier
 	size_t const IDENTIFIER_LEN = strlen(ARCHIVE_IDENTIFIER);
 	try {
-		Hpp::ByteV identifier = Hpp::deserializeByteV(file, IDENTIFIER_LEN);
+		Hpp::ByteV identifier = io.readPart(getSectionBegin(SECTION_IDENTIFIER), IDENTIFIER_LEN, true);
 		if (strncmp((char*)&identifier[0], ARCHIVE_IDENTIFIER, IDENTIFIER_LEN) != 0) {
 			throw 0xbeef;
 		}
 	}
 	catch ( ... ) {
-		file.close();
 		throw Hpp::Exception("Not a valid archive file!");
 	}
 
 	// Version
 	try {
-		uint8_t version = Hpp::deserializeUInt8(file);
-		if (version != 0) {
+		Hpp::ByteV version_bytev = io.readPart(getSectionBegin(SECTION_VERSION), 1, true);
+		if (version_bytev[0] != 0) {
 			throw 0xbeef;
 		}
 	}
 	catch ( ... ) {
-		file.close();
 		throw Hpp::Exception("Version of archive is not supported!");
 	}
 
-	// Do this only if crypto key is not set ey
+	// Do this only if crypto key is not set yet
 	if (crypto_key.empty()) {
 
 		// Crypto flag and possible salt
 		Hpp::ByteV salt;
 		try {
-			uint8_t crypto_enabled = Hpp::deserializeUInt8(file);
-			if (crypto_enabled) {
-				salt = Hpp::deserializeByteV(file, SALT_SIZE);
+			Hpp::ByteV crypto_enabled_bytev = io.readPart(getSectionBegin(SECTION_CRYPTO_FLAG), 1, true);
+			if (crypto_enabled_bytev[0]) {
+				salt = io.readPart(getSectionBegin(SECTION_SALT), SALT_SIZE, true);
 			}
 		}
 		catch ( ... ) {
@@ -784,7 +757,10 @@ void Archive::loadStateFromFile(std::string const& password)
 		if (!password.empty()) {
 			crypto_key = generateCryptoKey(password, salt);
 
-			crypto_password_verifier = readPart(getSectionBegin(SECTION_PASSWORD_VERIFIER), PASSWORD_VERIFIER_SIZE);
+			// Inform FileIO about this
+			io.enableCrypto(crypto_key);
+
+			crypto_password_verifier = io.readPart(getSectionBegin(SECTION_PASSWORD_VERIFIER), PASSWORD_VERIFIER_SIZE);
 			Hpp::ByteV::iterator pw_verif_half = crypto_password_verifier.begin() + PASSWORD_VERIFIER_SIZE / 2;
 
 			if (!std::equal(crypto_password_verifier.begin(), pw_verif_half, pw_verif_half)) {
@@ -797,15 +773,18 @@ void Archive::loadStateFromFile(std::string const& password)
 
 	// Read reference to root node, allocations
 	// of metadata, and ending of data section.
-	Hpp::ByteV root_refs_and_sizes = readPart(getSectionBegin(SECTION_ROOT_REF_AND_SIZES), NODE_HASH_SIZE + 3*8);
+	Hpp::ByteV root_refs_and_sizes = io.readPart(getSectionBegin(SECTION_ROOT_REF_AND_SIZES), NODE_HASH_SIZE + 3*8);
 	root_ref = Hpp::ByteV(root_refs_and_sizes.begin(), root_refs_and_sizes.begin() + NODE_HASH_SIZE);
 	metas_s_size = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE]);
 	metas_us_size = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 8]);
 	datasec_end = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 16]);
 
+	// Inform FileIO about new data end
+	io.setEndOfData(datasec_end);
+
 	// Check if journal or orphan nodes exists
-	journal_exists = (readPart(getSectionBegin(SECTION_JOURNAL_FLAG), 1)[0] >= 128);
-	orphan_nodes_exists = (readPart(getSectionBegin(SECTION_ORPHAN_NODES_FLAG), 1)[0] >= 128);
+	io.readJournalflagState();
+	orphan_nodes_exists = (io.readPart(getSectionBegin(SECTION_ORPHAN_NODES_FLAG), 1)[0] >= 128);
 
 }
 
@@ -823,7 +802,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 			// left, then check both of them
 			if (search_end - search_begin <= 1) {
 				for (size_t search2 = search_begin; search2 <= search_end; ++ search2) {
-					Hpp::ByteV metadata_srz = readPart(begin + search2 * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+					Hpp::ByteV metadata_srz = io.readPart(begin + search2 * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 					// In case of empty, skip this
 					if (metadata_srz[0] >= 128) {
 						continue;
@@ -846,7 +825,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 			while (small_half >= ssize_t(search_begin)) {
 				// If current slot is not empty,
 				// then break from this loop.
-				Hpp::ByteV metadata_srz = readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+				Hpp::ByteV metadata_srz = io.readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 				if (metadata_srz[0] < 128) {
 					break;
 				}
@@ -857,7 +836,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 				while (big_half <= ssize_t(search_end)) {
 					// If current slot is not empty,
 					// then break from this loop.
-					Hpp::ByteV metadata_srz = readPart(begin + big_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+					Hpp::ByteV metadata_srz = io.readPart(begin + big_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 					if (metadata_srz[0] < 128) {
 						break;
 					}
@@ -867,7 +846,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 
 			// If there was item in the half slot, then check only it
 			if (small_half == big_half) {
-				Hpp::ByteV metadata_srz = readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+				Hpp::ByteV metadata_srz = io.readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 				int compare = Hpp::compare(hash.begin(), hash.end(), metadata_srz.begin() + 1);
 				// Check if this is the correct hash
 				if (compare == 0) {
@@ -885,7 +864,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 			// There was no item in half slot. First compare to
 			// smaller hash, if there is metadata entry there.
 			if (small_half >= ssize_t(search_begin)) {
-				Hpp::ByteV metadata_srz = readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+				Hpp::ByteV metadata_srz = io.readPart(begin + small_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 				if (metadata_srz[0] >= 128) {
 					throw Hpp::Exception("Unexpected empty metadata slot!");
 				}
@@ -906,7 +885,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 			// Then compare to bigger hash, if
 			// there is metadata entry there.
 			if (big_half <= ssize_t(search_end)) {
-				Hpp::ByteV metadata_srz = readPart(begin + big_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+				Hpp::ByteV metadata_srz = io.readPart(begin + big_half * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 				if (metadata_srz[0] >= 128) {
 					throw Hpp::Exception("Unexpected empty metadata slot!");
 				}
@@ -935,7 +914,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 	{
 		size_t begin = getSectionBegin(SECTION_METADATA_SORTED);
 		for (size_t search = 0; search < metas_s_size; ++ search) {
-			Hpp::ByteV metadata_srz = readPart(begin + search * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+			Hpp::ByteV metadata_srz = io.readPart(begin + search * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 			// In case of empty, skip this
 			if (metadata_srz[0] >= 128) {
 				continue;
@@ -951,7 +930,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 	// Then check unsorten section
 	size_t begin = getSectionBegin(SECTION_METADATA_UNSORTED);
 	for (size_t search = 0; search < metas_us_size; ++ search) {
-		Hpp::ByteV metadata_srz = readPart(begin + search * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
+		Hpp::ByteV metadata_srz = io.readPart(begin + search * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE);
 		// In case of empty, skip this
 		if (metadata_srz[0] >= 128) {
 			continue;
@@ -981,7 +960,7 @@ Nodes::Metadata Archive::getNodeMetadata(uint64_t metadata_loc)
 {
 	size_t metadata_loc_abs = getSectionBegin(SECTION_METADATA_SORTED) + metadata_loc * Nodes::Metadata::ENTRY_SIZE;
 
-	Hpp::ByteV metadata_srz = readPart(metadata_loc_abs, Nodes::Metadata::ENTRY_SIZE);
+	Hpp::ByteV metadata_srz = io.readPart(metadata_loc_abs, Nodes::Metadata::ENTRY_SIZE);
 	Nodes::Metadata metadata = Nodes::Metadata(metadata_srz);
 
 	return metadata;
@@ -1060,7 +1039,7 @@ size_t Archive::getEmptyMetadataSlot(void)
 	for (size_t metas_us_id = 0;
 	     metas_us_id < metas_us_size;
 	     ++ metas_us_id) {
-		if (Nodes::Metadata(readPart(metas_us_begin + metas_us_id * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE)).empty) {
+		if (Nodes::Metadata(io.readPart(metas_us_begin + metas_us_id * Nodes::Metadata::ENTRY_SIZE, Nodes::Metadata::ENTRY_SIZE)).empty) {
 			return metas_us_id;
 		}
 	}
@@ -1198,7 +1177,8 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	writes += writesMetadata(metadata_new, metadata_new_loc);
 
 	// Write
-	doJournalAndWrites(writes);
+	io.doJournalAndWrites(writes);
+	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 }
 
 Writes Archive::writesPasswordVerifier(void)
@@ -1214,45 +1194,6 @@ Writes Archive::writesPasswordVerifier(void)
 
 	Writes result;
 	result[getSectionBegin(SECTION_PASSWORD_VERIFIER)] = part;
-	return result;
-}
-
-Writes Archive::writesJournalFlag(bool journal_exists)
-{
-	Hpp::ByteV flag_serialized;
-	if (journal_exists) {
-		flag_serialized.push_back(Hpp::randomInt(128, 255));
-	} else {
-		flag_serialized.push_back(Hpp::randomInt(0, 127));
-	}
-
-	Writes result;
-	result[getSectionBegin(SECTION_JOURNAL_FLAG)] = flag_serialized;
-	return result;
-}
-
-Writes Archive::writesJournal(uint64_t journal_info_begin, Writes const& journal)
-{
-	Writes result;
-
-	result[getSectionBegin(SECTION_JOURNAL_INFO)] = Hpp::uInt64ToByteV(journal_info_begin);
-
-	if (!journal.empty()) {
-		Hpp::ByteV journal_srz;
-		for (Writes::const_iterator journal_it = journal.begin();
-		     journal_it != journal.end();
-		     ++ journal_it) {
-			uint64_t begin = journal_it->first;
-			Hpp::ByteV const& data = journal_it->second;
-			journal_srz += Hpp::uInt64ToByteV(begin);
-			journal_srz += Hpp::uInt32ToByteV(data.size());
-			journal_srz += data;
-		}
-
-		result[journal_info_begin] = Hpp::uInt64ToByteV(journal_srz.size());
-		result[journal_info_begin + 8] = journal_srz;
-	}
-
 	return result;
 }
 
@@ -1278,7 +1219,7 @@ Writes Archive::writesSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs)
 		throw Hpp::Exception("Node " + Hpp::byteVToHexV(hash) + " not found!");
 	}
 	size_t metadata_loc_abs = getSectionBegin(SECTION_METADATA_SORTED) + metadata_loc * Nodes::Metadata::ENTRY_SIZE;
-	Nodes::Metadata meta(readPart(metadata_loc_abs, Nodes::Metadata::ENTRY_SIZE));
+	Nodes::Metadata meta(io.readPart(metadata_loc_abs, Nodes::Metadata::ENTRY_SIZE));
 	meta.refs = refs;
 	return writesMetadata(meta, metadata_loc);
 }
@@ -1391,12 +1332,17 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 
 		metas_us_size += amount;
 		datasec_end = getSectionBegin(SECTION_DATA);
+
+		// Inform FileIO about new data end
+		io.setEndOfData(datasec_end);
+
 		Writes writes;
 		writes += writesRootRefAndCounts();
 		for (size_t reset = 0; reset < amount; ++ reset) {
 			writes += writesMetadata(empty_metadata, metas_s_size + metas_us_size - amount + reset);
 		}
-		doJournalAndWrites(writes);
+		io.doJournalAndWrites(writes);
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 	}
 	// If there is not infinite amount of emptiness,
@@ -1493,7 +1439,8 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 			writes += writesRootRefAndCounts();
 			writes += writesEmpty(getSectionBegin(SECTION_DATA), empty_bytes_after_datasec_begin - Nodes::DataEntry::HEADER_SIZE, false);
 		}
-		doJournalAndWrites(writes);
+		io.doJournalAndWrites(writes);
+		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 	}
 
@@ -1597,10 +1544,14 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	}
 	// Prepare to update end of data section
 	if (original_datasec_end != datasec_end) {
+		// Inform FileIO about new data end
+		io.setEndOfData(datasec_end);
+
 		writes += writesRootRefAndCounts();
 	}
 	// Do writing
-	doJournalAndWrites(writes);
+	io.doJournalAndWrites(writes);
+	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
 }
@@ -1648,7 +1599,8 @@ void Archive::clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
 	}
 
 	// Do writes
-	doJournalAndWrites(writes);
+	io.doJournalAndWrites(writes);
+	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 
 	// Clean possible new orphans too
 	for (NodeInfos::const_iterator new_orphans_it = new_orphans.begin();
@@ -1660,22 +1612,14 @@ void Archive::clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
 
 }
 
-void Archive::clearJournalFlag(void)
-{
-	Writes writes = writesJournalFlag(false);
-	doWrites(writes);
-	file.sync();
-	journal_exists = false;
-}
-
 void Archive::setOrphanNodesFlag(bool flag)
 {
 	if (flag == orphan_nodes_exists) {
 		return;
 	}
 	Writes writes = writesOrphanNodesFlag(flag);
-	doWrites(writes);
-	file.sync();
+	io.doWrites(writes);
+	io.flush();
 	orphan_nodes_exists = flag;
 }
 
@@ -1683,12 +1627,16 @@ size_t Archive::getSectionBegin(Section sec) const
 {
 	size_t result = 0;
 	// Archive identifier
+	if (sec == SECTION_IDENTIFIER) return result;
 	result += strlen(ARCHIVE_IDENTIFIER);
 	// Version
+	if (sec == SECTION_VERSION) return result;
 	result += 1;
 	// Crypto flag
+	if (sec == SECTION_CRYPTO_FLAG) return result;
 	result += 1;
 	// Salt
+	if (sec == SECTION_SALT) return result;
 	if (!crypto_key.empty()) result += SALT_SIZE;
 	// Password verifier
 	if (sec == SECTION_PASSWORD_VERIFIER) return result;
@@ -1716,44 +1664,6 @@ size_t Archive::getSectionBegin(Section sec) const
 
 	HppAssert(false, "Invalid section!");
 	return 0;
-}
-
-void Archive::ensureArchiveSize(size_t size)
-{
-	size_t const WRITE_BUF_SIZE = 128;
-	char write_buf[WRITE_BUF_SIZE];
-	#ifndef NDEBUG
-	Hpp::toZero(write_buf, WRITE_BUF_SIZE);
-	#endif
-
-	file.seekp(0, std::ios_base::end);
-	size_t size_now = file.tellp();
-	while (size_now < size) {
-		size_t write_amount = std::min(size_now - size, WRITE_BUF_SIZE);
-		file.write(write_buf, write_amount);
-		size_now += write_amount;
-	}
-}
-
-Hpp::ByteV Archive::readPart(size_t offset, size_t size)
-{
-	// Prepare
-	Hpp::ByteV part;
-	part.assign(size, 0);
-	// Read bytes
-	file.seekg(offset, std::ios_base::beg);
-	file.read((char*)&part[0], size);
-	// Check encryption
-	if (crypto_key.empty()) {
-		return part;
-	} else {
-		Hpp::ByteV part_decrypted;
-		part_decrypted.reserve(size);
-		Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
-		cipher.decrypt(part);
-		cipher.readDecrypted(part_decrypted, true);
-		return part_decrypted;
-	}
 }
 
 void Archive::moveData(uint64_t src, uint64_t dest,
@@ -1860,84 +1770,14 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 
 	// If datasection end was changed, then write it too
 	if (original_datasec_end != datasec_end) {
+		// Inform FileIO about new data end
+		io.setEndOfData(datasec_end);
+
 		writes += writesRootRefAndCounts();
 	}
 
 	// Do writes
-	doJournalAndWrites(writes);
-}
-
-void Archive::doWrites(Writes const& writes, bool do_not_crypt)
-{
-	// Ensure writes do not overlap
-	#ifndef NDEBUG
-	size_t last_end = 0;
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		// Get specs
-		uint64_t begin = writes_it->first;
-		uint64_t end = begin + writes_it->second.size();
-		HppAssert(begin >= last_end, "Unable to do writes, because there are some that overlap!");
-		last_end = end;
-	}
-	#endif
-	// Do writes
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		// Get specs
-		uint64_t offset = writes_it->first;
-		Hpp::ByteV const& data = writes_it->second;
-
-		ensureArchiveSize(offset);
-
-		// Write
-		file.seekp(offset, std::ios_base::beg);
-		if (crypto_key.empty() || do_not_crypt) {
-			file.write((char const*)&data[0], data.size());
-		} else {
-			Hpp::ByteV data_crypted;
-			Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
-			cipher.encrypt(data);
-			cipher.readEncrypted(data_crypted, true);
-			file.write((char const*)&data_crypted[0], data_crypted.size());
-		}
-	}
-}
-
-void Archive::doJournalAndWrites(Writes const& writes)
-{
-
-	// First ensure there is no journal already
-	if (journal_exists) {
-		throw Hpp::Exception("There is already journal!");
-	}
-
-	// Calculate position for journal. It must be after every data in file
-	uint64_t journal_begin = datasec_end;
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		uint64_t offset = writes_it->first;
-		Hpp::ByteV const& data = writes_it->second;
-		journal_begin = std::max< uint64_t >(journal_begin, offset + data.size());
-	}
-
-	// Write journal to disk
-	doWrites(writesJournal(journal_begin, writes));
-	file.flush();
-
-	// Write journal flag to disk
-	doWrites(writesJournalFlag(true));
-	file.flush();
-
-	// Now do writes
-	doWrites(writes);
-
-	// Finally clear journal flag
-	clearJournalFlag();
-
+	io.doJournalAndWrites(writes);
 	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 }
 
@@ -2155,13 +1995,5 @@ Hpp::ByteV Archive::generateCryptoKey(std::string const& password, Hpp::ByteV co
 	hasher.addData(salt);
 	Hpp::ByteV result;
 	hasher.getHash(result);
-	return result;
-}
-
-Hpp::ByteV Archive::generateCryptoIV(size_t offset)
-{
-	Hpp::ByteV result(8, 0);
-	result.reserve(16);
-	result += Hpp::uInt64ToByteV(offset);
 	return result;
 }
