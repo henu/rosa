@@ -41,9 +41,8 @@ public:
 
 	void remove(Paths const& paths, std::ostream* strm);
 
-	// Creates new, empty folder to specific path.
-	// Path must be absolute to root of archive.
-	void createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fsmetadata);
+	// Creates new, empty folders to specific paths.
+	void createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm);
 
 	// Reads and applies writes that are found from journal. If
 	// journal does not exist, then this function does nothing.
@@ -66,7 +65,6 @@ public:
 	Nodes::DataEntry getDataEntry(uint64_t loc, bool read_data, bool extract_data = false);
 	inline bool getJournalFlag(void) const { return io.getJournalFlag(); }
 	uint64_t getJournalLocation(void);
-	Nodes::Folder getRootFolder(void);
 	inline bool getOrphanNodesFlag(void) const { return orphan_nodes_exists; }
 	Hpp::ByteV getNodeData(Hpp::ByteV const& node_hash);
 	inline bool pathExists(Hpp::Path const& path);
@@ -155,9 +153,10 @@ private:
 	// is infinite amount of empty data and positive non-zero otherwise.
 	ssize_t calculateAmountOfEmptySpace(uint64_t loc);
 
-	// Returns vector of Folders that form given path from
-	// root. Throws exception if path does not exist.
-	Nodes::Folders getFoldersToPath(Hpp::Path const& path);
+	// Returns vector of Folders that form given path from root. Throws
+	// exception if path does not exist. Root can be either current root
+	// (root_ref), or some custom root during an atomic action.
+	Nodes::Folders getFoldersToPath(Hpp::ByteV const& root, Hpp::Path const& path);
 
 	// Returns empty metadata slot from unsorted section. If there
 	// is no space there, then this function will make some.
@@ -173,7 +172,16 @@ private:
 	// Remove specific path and return new root node that is spawned from
 	// this operation. If path is not found, then the same root node is
 	// returned that was originally used.
-	Hpp::ByteV doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, std::ostream* strm);
+	Hpp::ByteV doRemoving(Hpp::ByteV const& root,
+	                      Hpp::Path const& path,
+	                      std::ostream* strm);
+
+	// Make new folder and return new root node that is spawned from
+	// this operation. If path already exists, then exception is thrown.
+	Hpp::ByteV doMakingOfNewFolder(Hpp::ByteV const& root,
+	                               Hpp::Path const& path,
+	                               Nodes::FsMetadata const& fsmetadata,
+	                               std::ostream* strm);
 
 	// Replaces last (deepest) folder in path and updates all its parents
 	// too. Finally it returns hash of new root. If some nodes does not

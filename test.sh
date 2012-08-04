@@ -58,6 +58,9 @@ verifyArchive
 echo "Modifying archive"
 ./rosa remove testdata/archive.rosa today/2/mercurial-2.1.2/contrib /yesterday/1/mercurial-1.7.4/README
 verifyArchive
+./rosa mkdir testdata/archive.rosa today/2/lol /test_omg
+verifyArchive
+
 rm testdata/archive.rosa
 
 echo "Taking first snapshot of encrypted archive"
@@ -74,6 +77,8 @@ verifyArchive
 
 echo "Modifying encrypted archive"
 ./rosa -p test remove testdata/archive.rosa today/2/mercurial-2.1.2/contrib /yesterday/1/mercurial-1.7.4/README
+verifyArchive
+./rosa -p test mkdir testdata/archive.rosa today/2/lol /test_omg
 verifyArchive
 
 echo "Cleaning"

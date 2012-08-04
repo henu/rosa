@@ -121,7 +121,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 	Nodes::Folders fpath;
 	Hpp::Path dest_fixed(dest);
 	try {
-		fpath = getFoldersToPath(dest_abs);
+		fpath = getFoldersToPath(root_ref, dest_abs);
 	}
 	catch (Hpp::Exception) {
 		// Path does not exist. Check if destination has parent
@@ -133,7 +133,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 		}
 		// Get folder path
 		Hpp::Path dest_parent = dest_abs.getParent();
-		fpath = getFoldersToPath(dest_parent);
+		fpath = getFoldersToPath(root_ref, dest_parent);
 		get_name_from_dest = true;
 		dest_fixed = dest_parent;
 	}
@@ -290,20 +290,30 @@ void Archive::remove(Paths const& paths, std::ostream* strm)
 	io.flush();
 }
 
-void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fsmetadata)
+void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm)
 {
-
-	// First find a path of Folders to the parent of "path".
-	Hpp::Path parent = path.getParent();
-	Nodes::Folders fpath = getFoldersToPath(parent);
-
-	std::string new_folder_name = path.getFilename();
-
-	// Ensure there is no child with same name already
-	HppAssert(!fpath.empty(), "No folders!");
-	if (fpath.back().hasChild(new_folder_name)) {
-		throw Hpp::Exception("Folder already exists!");
+	// Ensure all paths are valid, i.e. their parents
+	// exist and they themself does not exist yet.
+	// Also convert all of them to absolute format.
+	for (Paths::iterator paths_it = paths.begin();
+	     paths_it != paths.end();
+	     ++ paths_it) {
+		Hpp::Path& path = *paths_it;
+		path.forceToAbsolute();
+		if (!path.hasParent()) {
+			throw Hpp::Exception("Unable to create root directory!");
+		}
+		Hpp::Path parent = path.getParent();
+		if (!pathExists(parent)) {
+			throw Hpp::Exception("Unable to create directory \"" + path.toString() + "\", because its parent does not exist!");
+		}
+		if (pathExists(path)) {
+// TODO: Ask if existing child should be overwritten!
+			throw Hpp::Exception("Unable to create directory, because \"" + path.toString() + "\" already exists!");
+		}
 	}
+
+// TODO: Ensure no path is given twice
 
 	// The following operations will create new Nodes,
 	// that will be orphans at first. Because of this,
@@ -311,32 +321,43 @@ void Archive::createNewFolder(Hpp::Path const& path, Nodes::FsMetadata const& fs
 	bool orphan_nodes_flag_before = getOrphanNodesFlag();
 	setOrphanNodesFlag(true);
 
-	// Then go the path through from end to beginning, and copy
-	// whole Path, but so that the deepest will contain new empty
-	// folder. Every old Folder will be slightly modified. This
-	// means also the root node, which will be replaced at the
-	// end. First create the actual new folder.
-	Nodes::Folder empty_folder;
-	spawnOrGetNode(&empty_folder);
+	Hpp::ByteV root_now = root_ref;
 
-	// Replace last folder from the path
-	// with one that has the empty as child.
-	Nodes::Folder parent_of_empty = fpath.back();
-	parent_of_empty.setChild(new_folder_name, Nodes::FSTYPE_FOLDER, empty_folder.getHash(), fsmetadata);
-	Hpp::ByteV root_now = replaceLastFolder(fpath, parent, parent_of_empty);
+	std::vector< Hpp::ByteV > nodes_to_remove;
 
-	// Replace and clean old root
-	Hpp::ByteV old_root = root_ref;
+	// Make new folders
+	for (Paths::const_iterator paths_it = paths.begin();
+	     paths_it != paths.end();
+	     ++ paths_it) {
+		Hpp::Path const& path = *paths_it;
+
+		nodes_to_remove.push_back(root_now);
+
+		root_now = doMakingOfNewFolder(root_now, path, fsmetadata, strm);
+	}
 	replaceRootNode(root_now);
-	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
-	HppAssert(metadata_loc >= 0, "Old root node not found!");
-	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
-	if (metadata.refs == 0) {
-		clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
+
+	// Clean old root node and all extra nodes
+	// that were created during removings.
+	for (std::vector< Hpp::ByteV >::const_iterator nodes_to_remove_it = nodes_to_remove.begin();
+	     nodes_to_remove_it != nodes_to_remove.end();
+	     ++ nodes_to_remove_it) {
+		Hpp::ByteV const& node_to_remove = *nodes_to_remove_it;
+
+		ssize_t metadata_loc = getNodeMetadataLocation(node_to_remove);
+		if (metadata_loc >= 0) {
+			Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+			if (metadata.refs == 0) {
+				clearOrphanNodeRecursively(metadata, metadata_loc, Nodes::TYPE_FOLDER);
+			}
+		}
+
 	}
 
 	setOrphanNodesFlag(orphan_nodes_flag_before);
 
+	// Write to disk
+	io.flush();
 }
 
 void Archive::finishPossibleInterruptedJournal(void)
@@ -598,12 +619,6 @@ uint64_t Archive::getJournalLocation(void)
 {
 	Hpp::ByteV journal_loc_srz = io.readPart(getSectionBegin(SECTION_JOURNAL_INFO), 8);
 	return Hpp::cStrToUInt64(&journal_loc_srz[0]);
-}
-
-Nodes::Folder Archive::getRootFolder(void)
-{
-	Hpp::ByteV node_srz = getNodeData(root_ref);
-	return Nodes::Folder(node_srz);
 }
 
 Hpp::ByteV Archive::getNodeData(Hpp::ByteV const& node_hash)
@@ -1004,14 +1019,14 @@ ssize_t Archive::calculateAmountOfEmptySpace(uint64_t loc)
 	return empty_space;
 }
 
-Nodes::Folders Archive::getFoldersToPath(Hpp::Path const& path)
+Nodes::Folders Archive::getFoldersToPath(Hpp::ByteV const& root, Hpp::Path const& path)
 {
 	HppAssert(path.isAbsolute(), "Path must be absolute!");
 
 	Nodes::Folders result;
 	result.reserve(path.partsSize() + 1);
 
-	Nodes::Folder root_folder = getRootFolder();
+	Nodes::Folder root_folder(getNodeData(root));
 	result.push_back(root_folder);
 
 	Nodes::Folder parent_folder = root_folder;
@@ -1081,7 +1096,7 @@ Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, st
 
 	Nodes::Folders fpath;
 	try {
-		fpath = getFoldersToPath(parent);
+		fpath = getFoldersToPath(root, parent);
 	}
 	catch (Hpp::Exception) {
 		return root;
@@ -1090,16 +1105,45 @@ Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, st
 	// Replace last folder with cloned one, that has the child removed
 	HppAssert(!fpath.empty(), "Folder path must not be empty!");
 
-	if (!fpath.back().hasChild(child_name)) {
+	Nodes::Folder folder = fpath.back();
+	if (!folder.hasChild(child_name)) {
 		return root;
 	}
-	Nodes::Folder folder = fpath.back();
 	folder.removeChild(child_name);
 
 	Hpp::ByteV new_root = replaceLastFolder(fpath, parent, folder);
 
 	return new_root;
+}
 
+Hpp::ByteV Archive::doMakingOfNewFolder(Hpp::ByteV const& root,
+                                        Hpp::Path const& path,
+                                        Nodes::FsMetadata const& fsmetadata,
+                                        std::ostream* strm)
+{
+// TODO: Output something!
+(void)strm;
+
+	HppAssert(path.hasParent(), "No parent!");
+	Hpp::Path parent = path.getParent();
+	std::string child_name = path.getFilename();
+
+	Nodes::Folders fpath = getFoldersToPath(root, parent);
+
+	// Replace last folder with cloned one, that has the child removed
+	HppAssert(!fpath.empty(), "Folder path must not be empty!");
+
+	Nodes::Folder folder = fpath.back();
+	if (folder.hasChild(child_name)) {
+		throw Hpp::Exception("Unable to create new folder because there is already something with the same name!");
+	}
+	Nodes::Folder child;
+	spawnOrGetNode(&child);
+	folder.setChild(child_name, Nodes::FSTYPE_FOLDER, child.getHash(), fsmetadata);
+
+	Hpp::ByteV new_root = replaceLastFolder(fpath, parent, folder);
+
+	return new_root;
 }
 
 Hpp::ByteV Archive::replaceLastFolder(Nodes::Folders const& fpath,

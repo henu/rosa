@@ -315,8 +315,9 @@ HppAssert(false, "Not implemented yet!");
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_MKDIR) {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
+Nodes::FsMetadata fsmetadata;
+// TODO: Make it possible to give custom metadata!
+		archiver.createNewFolders(targets, fsmetadata, verbose_strm);
 	} else if (action == ACTION_SNAPSHOT) {
 		archiver.snapshot(snapshot, sources, verbose_strm);
 		archiver.optimize();

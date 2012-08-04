@@ -20,6 +20,7 @@ public:
 	void put(Paths const& sources, Hpp::Path const& dest, std::ostream* strm);
 	void remove(Paths const& paths, std::ostream* strm);
 	void snapshot(std::string const& snapshot, Paths const& sources, std::ostream* strm);
+	void createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm);
 
 	// Archive query/and get functions
 	void get(Paths const& sources, Hpp::Path const& dest, std::ostream* strm);
