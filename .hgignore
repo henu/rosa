@@ -8,3 +8,4 @@ rosa.layout
 src/*.o
 src/*/*.o
 rosa
+testdata
