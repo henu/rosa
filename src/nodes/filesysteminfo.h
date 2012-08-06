@@ -51,7 +51,8 @@ namespace Nodes
 		}
 		inline FsMetadata(Hpp::ByteV::const_iterator& serialized_it, Hpp::ByteV::const_iterator const& serialized_end)
 		{
-			while (serialized_it != serialized_end) {
+			uint16_t pairs_size = Hpp::deserializeUInt16(serialized_it, serialized_end);
+			for (size_t pair_id = 0; pair_id < pairs_size; ++ pair_id) {
 				std::string key = Hpp::deserializeString(serialized_it, serialized_end, 1);
 				std::string value = Hpp::deserializeString(serialized_it, serialized_end, 2);
 				pairs[key] = value;
@@ -61,6 +62,8 @@ namespace Nodes
 		Hpp::ByteV serialize(void) const
 		{
 			Hpp::ByteV result;
+			HppAssert(pairs.size() <= 0xffff, "Too many pairs!");
+			result += Hpp::uInt16ToByteV(pairs.size());
 			for (Pairs::const_iterator pairs_it = pairs.begin();
 			     pairs_it != pairs.end();
 			     ++ pairs_it) {
