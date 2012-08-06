@@ -1397,11 +1397,11 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 		uint64_t min_dataentry_loc = datasec_begin + bytes_alloc;
 		while (empty_bytes_after_datasec_begin != (ssize_t)bytes_alloc && empty_bytes_after_datasec_begin < (ssize_t)bytes_alloc + (ssize_t)Nodes::DataEntry::HEADER_SIZE) {
 			// Read length of next data entry
-			Nodes::DataEntry moved_de = getDataEntry(datasec_begin + empty_bytes_after_datasec_begin, false);
+			uint64_t moved_de_loc = datasec_begin + empty_bytes_after_datasec_begin;
+			Nodes::DataEntry moved_de = getDataEntry(moved_de_loc, false);
 			if (moved_de.empty) {
 				throw Hpp::Exception("Unexpected empty data entry!");
 			}
-			uint64_t moved_de_loc = datasec_begin + empty_bytes_after_datasec_begin;
 
 			// Loop until space is found
 			uint64_t de_to_check_loc = moved_de_loc;
@@ -1414,10 +1414,23 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 
 				// If there is infinite amount of empty data,
 				// then relocate data entry here. But be sure
-				// to move it far enough, so it wont get in
-				// the way of new metadatas.
+				// to move it far enough, so it wont get in the
+				// way of new metadatas. Also, be sure that the
+				// empty space between it and the last
+				// dataentry and the future data begin is
+				// either zero, or >= 8, so there can be empty
+				// space between them.
 				if (empty_bytes_after_de < 0) {
-					uint64_t moved_new_loc = std::max(min_dataentry_loc, de_to_check_end);
+					uint64_t moved_new_loc;
+					if (min_dataentry_loc > de_to_check_end) {
+						moved_new_loc = min_dataentry_loc;
+						size_t empty_after_last_de = moved_new_loc - de_to_check_end;
+						if (empty_after_last_de != 0 && empty_after_last_de < 8) {
+							moved_new_loc += 8;
+						}
+					} else {
+						moved_new_loc = de_to_check_end;
+					}
 					// If last de was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
