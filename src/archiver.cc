@@ -121,7 +121,9 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources, std::
 // TODO: In future, use some asking system to tell that if folder already exists, then do not create it!
 	Hpp::Path snapshot_path = Hpp::Path("/") / snapshot;
 	try {
-		archive.createNewFolders(Paths(1, snapshot_path), Nodes::FsMetadata(), NULL);
+		Nodes::FsMetadata fsmetadata;
+		fsmetadata.readFromCurrentEnvironment();
+		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata, NULL);
 	}
 	catch (Hpp::Exception) {
 	}

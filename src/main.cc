@@ -66,6 +66,11 @@ void run(int argc, char** argv)
 	Paths sources;
 	Paths targets;
 
+	// Default metadata for new folders, etc.
+	Nodes::FsMetadata fsmetadata;
+	fsmetadata.readFromCurrentEnvironment();
+// TODO: Make it possible to give custom metadata!
+
 	if (extra_args.empty()) {
 		action = ACTION_NOTHING;
 	} else if (extra_args[0] == "put") {
@@ -315,8 +320,6 @@ HppAssert(false, "Not implemented yet!");
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_MKDIR) {
-Nodes::FsMetadata fsmetadata;
-// TODO: Make it possible to give custom metadata!
 		archiver.createNewFolders(targets, fsmetadata, verbose_strm);
 	} else if (action == ACTION_SNAPSHOT) {
 		archiver.snapshot(snapshot, sources, verbose_strm);

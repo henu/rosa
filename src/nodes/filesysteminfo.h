@@ -2,6 +2,7 @@
 #define NODES_FILESYSTEMINFO_H
 
 #include <hpp/path.h>
+#include <hpp/userinfo.h>
 #include <hpp/bytev.h>
 #include <hpp/serialize.h>
 #include <hpp/time.h>
@@ -24,11 +25,6 @@ namespace Nodes
 
 		inline FsMetadata(void)
 		{
-			Hpp::Time now = Hpp::now();
-			pairs["crtime"] = Hpp::sizeToStr(now.getSeconds());
-			pairs["crtime_nsec"] = Hpp::sizeToStr(now.getNanoseconds());
-			pairs["mtime"] = Hpp::sizeToStr(now.getSeconds());
-			pairs["mtime_nsec"] = Hpp::sizeToStr(now.getNanoseconds());
 		}
 		inline FsMetadata(Hpp::Path const& path)
 		{
@@ -59,7 +55,27 @@ namespace Nodes
 			}
 		}
 
-		Hpp::ByteV serialize(void) const
+		// Sets creation and modification date to this moment
+		// and gets user and group from environment
+		inline void readFromCurrentEnvironment(void)
+		{
+			// Date
+			Hpp::Time now = Hpp::now();
+			pairs["crtime"] = Hpp::sizeToStr(now.getSeconds());
+			pairs["crtime_nsec"] = Hpp::sizeToStr(now.getNanoseconds());
+			pairs["mtime"] = Hpp::sizeToStr(now.getSeconds());
+			pairs["mtime_nsec"] = Hpp::sizeToStr(now.getNanoseconds());
+			// Owner and group
+			Hpp::Userinfo uinfo = Hpp::Userinfo::getMyInfo();
+			if (!uinfo.getUser().empty()) {
+				pairs["user"] = uinfo.getUser();
+			}
+			if (!uinfo.getGroup().empty()) {
+				pairs["group"] = uinfo.getGroup();
+			}
+		}
+
+		inline Hpp::ByteV serialize(void) const
 		{
 			Hpp::ByteV result;
 			HppAssert(pairs.size() <= 0xffff, "Too many pairs!");
