@@ -5,6 +5,9 @@
 #include "nodes/symlink.h"
 #include "options.h"
 
+#ifdef ENABLE_PROFILER
+#include <hpp/profiler.h>
+#endif
 #include <hpp/decompressor.h>
 #include <hpp/exception.h>
 #include <hpp/serialize.h>
@@ -375,6 +378,10 @@ void Archive::finishPossibleInterruptedJournal(void)
 
 void Archive::optimizeMetadata(void)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("Archive::optimizeMetadata");
+	#endif
+
 	Nodes::Metadata empty_metadata;
 	empty_metadata.empty = true;
 
@@ -806,6 +813,10 @@ void Archive::loadStateFromFile(std::string const& password)
 
 ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("Archive::getNodeMetadataLocation");
+	#endif
+
 	HppAssert(hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 
 	// First check sorted section
@@ -1503,6 +1514,9 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 
 void Archive::spawnOrGetNode(Nodes::Node* node)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("Archive::spawnOrGetNode");
+	#endif
 
 	Hpp::ByteV hash = node->getHash();
 
@@ -1519,7 +1533,10 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	// First ensure there is room at unsorted metadata range
 	size_t empty_slot = getEmptyMetadataSlot();
 
-	// Pack data
+	// Compress data
+	#ifdef ENABLE_PROFILER
+	prof.changeTask("Archive::spawnOrGetNode / Compress");
+	#endif
 	Hpp::ByteV data = node->getData();
 	Hpp::ByteV data_compressed;
 	Hpp::Compressor compressor;
@@ -1529,6 +1546,9 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	data_compressed += compressor.deinit();
 
 	// Find space for data of Node
+	#ifdef ENABLE_PROFILER
+	prof.changeTask("Archive::spawnOrGetNode / Find space for data");
+	#endif
 	size_t dataspace_begin = getSectionBegin(SECTION_DATA);
 	size_t dataspace_seek = dataspace_begin;
 	size_t dataspace_size = 0;
@@ -1568,6 +1588,9 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	uint64_t original_datasec_end = datasec_end;
 
 	// Prepare to write data of node
+	#ifdef ENABLE_PROFILER
+	prof.changeTask("Archive::spawnOrGetNode / Write");
+	#endif
 	Writes writes;
 	if (dataspace_size_infinite) {
 		datasec_end = dataspace_begin + Nodes::DataEntry::HEADER_SIZE + data_compressed.size();

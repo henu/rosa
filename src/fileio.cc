@@ -2,6 +2,9 @@
 
 #include "options.h"
 
+#ifdef ENABLE_PROFILER
+#include <hpp/profiler.h>
+#endif
 #include <hpp/serialize.h>
 #include <hpp/cast.h>
 #include <hpp/misc.h>
@@ -52,6 +55,10 @@ void FileIO::readJournalflagState(void)
 
 Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::readPart");
+	#endif
+
 	// Prepare
 	Hpp::ByteV part;
 	part.assign(size, 0);
@@ -73,6 +80,10 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 
 void FileIO::doWrites(Writes const& writes, bool do_not_crypt)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::doWrites");
+	#endif
+
 	// Ensure writes do not overlap
 	#ifndef NDEBUG
 	size_t last_end = 0;

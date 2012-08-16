@@ -2,6 +2,9 @@
 #include "types.h"
 #include "useroptions.h"
 
+#ifdef ENABLE_PROFILER
+#include <hpp/profiler.h>
+#endif
 #include <hpp/arguments.h>
 #include <hpp/path.h>
 #include <hpp/exception.h>
@@ -12,6 +15,10 @@
 void run(int argc, char** argv)
 {
 	srand(time(NULL));
+
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("other");
+	#endif
 
 	Hpp::Arguments args(argc, argv);
 	args.addArgument("--password", "<PASSWORD>", "Protects/opens protected archive with password.");
