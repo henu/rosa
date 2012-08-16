@@ -54,6 +54,10 @@ public:
 
 private:
 
+	#ifdef ENABLE_FILEIO_CACHE
+	typedef std::map< uint64_t, Hpp::ByteV > Cache;
+	#endif
+
 	std::fstream file;
 
 	Hpp::ByteV crypto_key;
@@ -62,6 +66,10 @@ private:
 	// This is used by journal to determine correct position
 	// for it and it MUST be updated by the user!
 	uint64_t data_end;
+
+	#ifdef ENABLE_FILEIO_CACHE
+	Cache cache;
+	#endif
 
 	// Is there journal or orphan nodes
 	bool journal_exists;
@@ -76,6 +84,12 @@ private:
 
 	// Generates initial vector for cipher, based on file offset
 	static Hpp::ByteV generateCryptoIV(size_t offset);
+
+	// Stores given chunk to cache. Also clears anything
+	// that is even partly overlapping this new data.
+	#ifdef ENABLE_FILEIO_CACHE
+	void storeToCache(uint64_t offset, Hpp::ByteV const& chunk);
+	#endif
 
 };
 

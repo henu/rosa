@@ -59,6 +59,14 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	Hpp::Profiler prof("FileIO::readPart");
 	#endif
 
+	// Check if part exists in cache
+	#ifdef ENABLE_FILEIO_CACHE
+	Cache::const_iterator cache_find = cache.find(offset);
+	if (cache_find != cache.end() && cache_find->second.size() == size) {
+		return cache_find->second;
+	}
+	#endif
+
 	// Prepare
 	Hpp::ByteV part;
 	part.assign(size, 0);
@@ -67,6 +75,9 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	file.read((char*)&part[0], size);
 	// Check encryption
 	if (do_not_decrypt || crypto_key.empty()) {
+		#ifdef ENABLE_FILEIO_CACHE
+		storeToCache(offset, part);
+		#endif
 		return part;
 	} else {
 		Hpp::ByteV part_decrypted;
@@ -74,6 +85,9 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 		Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
 		cipher.decrypt(part);
 		cipher.readDecrypted(part_decrypted, true);
+		#ifdef ENABLE_FILEIO_CACHE
+		storeToCache(offset, part_decrypted);
+		#endif
 		return part_decrypted;
 	}
 }
@@ -118,6 +132,10 @@ void FileIO::doWrites(Writes const& writes, bool do_not_crypt)
 			cipher.readEncrypted(data_crypted, true);
 			file.write((char const*)&data_crypted[0], data_crypted.size());
 		}
+
+		#ifdef ENABLE_FILEIO_CACHE
+		storeToCache(offset, data);
+		#endif
 	}
 }
 
@@ -237,3 +255,30 @@ Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 	result += Hpp::uInt64ToByteV(offset);
 	return result;
 }
+
+#ifdef ENABLE_FILEIO_CACHE
+void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
+{
+	uint64_t end = offset + chunk.size();
+	Cache::iterator cache_find;
+	// Clear overlapping chunks. Start from
+	// those that begin after this new one
+	while ((cache_find = cache.lower_bound(offset)) != cache.end()) {
+		if (cache_find->first >= end) {
+			break;
+		}
+		cache.erase(cache_find);
+	}
+	// Then clear those that begin before this new one
+	while ((cache_find = cache.lower_bound(offset)) != cache.begin()) {
+		-- cache_find;
+		if (cache_find->first + cache_find->second.size() <= offset) {
+			break;
+		}
+		cache.erase(cache_find);
+	}
+
+	// Store
+	cache[offset] = chunk;
+}
+#endif
