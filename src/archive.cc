@@ -105,7 +105,7 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 
 }
 
-void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
+void Archive::put(Paths const& src, Hpp::Path const& dest, Useroptions const& useroptions)
 {
 	HppAssert(!src.empty(), "No sources!");
 
@@ -151,7 +151,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 		// Read file hierarchy as Children of Folder
 		Nodes::Folder::Children new_children;
 // TODO: Ask here what to overwrite/discard/join/etc.!
-		readFileHierarchiesAsFolderChildren(new_children, src, strm);
+		readFileHierarchiesAsFolderChildren(new_children, src, useroptions);
 
 		// Set the only child
 		HppAssert(new_children.size() == 1, "There should be exactly one child!");
@@ -163,7 +163,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 		// Read file hierarchy as Children of Folder
 		Nodes::Folder::Children new_children;
 // TODO: Ask here what to overwrite/discard/join/etc.!
-		readFileHierarchiesAsFolderChildren(new_children, src, strm);
+		readFileHierarchiesAsFolderChildren(new_children, src, useroptions);
 
 		new_folder.addChildren(new_children);
 
@@ -183,7 +183,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
 	setOrphanNodesFlag(orphan_nodes_flag_before);
 }
 
-void Archive::get(Paths const& sources, Hpp::Path const& dest, std::ostream* strm)
+void Archive::get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions)
 {
 
 	// Check to which directory sources should be put
@@ -223,16 +223,16 @@ void Archive::get(Paths const& sources, Hpp::Path const& dest, std::ostream* str
 
 		// Do extracting recursively
 		if (customname.empty()) {
-			extractRecursively(node_hash, node_fsmetadata, realdest / source.getFilename(), strm);
+			extractRecursively(node_hash, node_fsmetadata, realdest / source.getFilename(), useroptions);
 		} else {
-			extractRecursively(node_hash, node_fsmetadata, realdest / customname, strm);
+			extractRecursively(node_hash, node_fsmetadata, realdest / customname, useroptions);
 		}
 
 	}
 
 }
 
-void Archive::remove(Paths const& paths, std::ostream* strm)
+void Archive::remove(Paths const& paths, Useroptions const& useroptions)
 {
 	// Ensure all paths exist!
 	for (Paths::const_iterator paths_it = paths.begin();
@@ -263,7 +263,7 @@ void Archive::remove(Paths const& paths, std::ostream* strm)
 
 		nodes_to_remove.push_back(root_now);
 
-		root_now = doRemoving(root_now, path, strm);
+		root_now = doRemoving(root_now, path, useroptions);
 	}
 	replaceRootNode(root_now);
 
@@ -290,7 +290,7 @@ void Archive::remove(Paths const& paths, std::ostream* strm)
 	io.flush();
 }
 
-void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm)
+void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions)
 {
 	// Ensure all paths are valid, i.e. their parents
 	// exist and they themself does not exist yet.
@@ -333,7 +333,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata,
 
 		nodes_to_remove.push_back(root_now);
 
-		root_now = doMakingOfNewFolder(root_now, path, fsmetadata, strm);
+		root_now = doMakingOfNewFolder(root_now, path, fsmetadata, useroptions);
 	}
 	replaceRootNode(root_now);
 
@@ -1078,10 +1078,10 @@ size_t Archive::getAmountOfNonemptyMetadataslotsAtRange(size_t begin, size_t end
 	return result;
 }
 
-Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, std::ostream* strm)
+Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, Useroptions const& useroptions)
 {
 // TODO: Output something!
-(void)strm;
+(void)useroptions;
 
 	// Force path to absolute form
 	Hpp::Path path_abs = path;
@@ -1119,10 +1119,10 @@ Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path, st
 Hpp::ByteV Archive::doMakingOfNewFolder(Hpp::ByteV const& root,
                                         Hpp::Path const& path,
                                         Nodes::FsMetadata const& fsmetadata,
-                                        std::ostream* strm)
+                                        Useroptions const& useroptions)
 {
 // TODO: Output something!
-(void)strm;
+(void)useroptions;
 
 	HppAssert(path.hasParent(), "No parent!");
 	Hpp::Path parent = path.getParent();
@@ -1838,7 +1838,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
 }
 
-void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& sources, std::ostream* strm)
+void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& sources, Useroptions const& useroptions)
 {
 	// Ensure no source has the same name
 	std::set< std::string > source_names;
@@ -1863,7 +1863,7 @@ void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& resul
 
 		Hpp::ByteV source_hash;
 		Nodes::FsType source_fstype;
-		readFileHierarchy(source_hash, source_fstype, source, strm);
+		readFileHierarchy(source_hash, source_fstype, source, useroptions);
 
 		std::string source_name = source.getFilename();
 		Nodes::FsMetadata source_fsmetadata = Nodes::FsMetadata(source);
@@ -1877,10 +1877,10 @@ void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& resul
 	}
 }
 
-void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source, std::ostream* strm)
+void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source, Useroptions const& useroptions)
 {
-	if (strm) {
-		(*strm) << source.toString() << std::endl;
+	if (useroptions.verbose) {
+		(*useroptions.verbose) << source.toString() << std::endl;
 	}
 
 	// Symlink
@@ -1924,7 +1924,7 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 			Hpp::ByteV child_hash;
 			Nodes::FsMetadata child_fsmetadata;
 			try {
-				readFileHierarchy(child_hash, dummy, child_path, strm);
+				readFileHierarchy(child_hash, dummy, child_path, useroptions);
 				child_fsmetadata = Nodes::FsMetadata(child_path);
 			}
 			catch (Hpp::Exception) {
@@ -1984,10 +1984,10 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 void Archive::extractRecursively(Hpp::ByteV const& hash,
                                  Nodes::FsMetadata const& fsmetadata,
                                  Hpp::Path const& target,
-                                 std::ostream* strm)
+                                 Useroptions const& useroptions)
 {
-	if (strm) {
-		(*strm) << target.toString() << std::endl;
+	if (useroptions.verbose) {
+		(*useroptions.verbose) << target.toString() << std::endl;
 	}
 
 	Nodes::Metadata metadata = getNodeMetadata(hash);
@@ -2007,7 +2007,7 @@ void Archive::extractRecursively(Hpp::ByteV const& hash,
 		     child = folder.getNextChild(child)) {
 			Hpp::ByteV child_hash = folder.getChildHash(child);
 			Nodes::FsMetadata child_fsmetadata = folder.getChildFsMetadata(child);
-			extractRecursively(child_hash, child_fsmetadata, target / child, strm);
+			extractRecursively(child_hash, child_fsmetadata, target / child, useroptions);
 		}
 	}
 	else if (de.type == Nodes::TYPE_FILE) {

@@ -96,39 +96,39 @@ void Archiver::printDebugInformation(void)
 
 }
 
-void Archiver::put(Paths const& src, Hpp::Path const& dest, std::ostream* strm)
+void Archiver::put(Paths const& src, Hpp::Path const& dest, Useroptions const& useroptions)
 {
-	archive.put(src, dest, strm);
+	archive.put(src, dest, useroptions);
 }
 
-void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm)
+void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions)
 {
-	archive.createNewFolders(paths, fsmetadata, strm);
+	archive.createNewFolders(paths, fsmetadata, useroptions);
 }
 
-void Archiver::get(Paths const& sources, Hpp::Path const& dest, std::ostream* strm)
+void Archiver::get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions)
 {
-	archive.get(sources, dest, strm);
+	archive.get(sources, dest, useroptions);
 }
 
-void Archiver::remove(Paths const& paths, std::ostream* strm)
+void Archiver::remove(Paths const& paths, Useroptions const& useroptions)
 {
-	archive.remove(paths, strm);
+	archive.remove(paths, useroptions);
 }
 
-void Archiver::snapshot(std::string const& snapshot, Paths const& sources, std::ostream* strm)
+void Archiver::snapshot(std::string const& snapshot, Paths const& sources, Useroptions const& useroptions)
 {
 // TODO: In future, use some asking system to tell that if folder already exists, then do not create it!
 	Hpp::Path snapshot_path = Hpp::Path("/") / snapshot;
 	try {
 		Nodes::FsMetadata fsmetadata;
 		fsmetadata.readFromCurrentEnvironment();
-		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata, NULL);
+		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata, useroptions.getWithoutVerbose());
 	}
 	catch (Hpp::Exception) {
 	}
 
-	archive.put(sources, snapshot_path, strm);
+	archive.put(sources, snapshot_path, useroptions);
 }
 
 void Archiver::fixPossibleErrors(void)

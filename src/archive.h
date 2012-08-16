@@ -6,6 +6,7 @@
 #include "nodes/node.h"
 #include "nodes/folder.h"
 #include "nodes/metadata.h"
+#include "useroptions.h"
 #include "writes.h"
 #include "types.h"
 #include "fileio.h"
@@ -32,17 +33,17 @@ public:
 	// Puts one or more paths to given path in archive. If destination
 	// does not exist, it will be created if there is only one source.
 	// Otherwise exception is thrown.
-	void put(Paths const& src, Hpp::Path const& dest, std::ostream* strm);
+	void put(Paths const& src, Hpp::Path const& dest, Useroptions const& useroptions);
 
 	// Gets one or more paths from archive and stores them to given path.
 	// If destination does not exist, it will be created if there is only
 	// one source. Otherwise exception is thrown.
-	void get(Paths const& sources, Hpp::Path const& dest, std::ostream* strm);
+	void get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions);
 
-	void remove(Paths const& paths, std::ostream* strm);
+	void remove(Paths const& paths, Useroptions const& useroptions);
 
 	// Creates new, empty folders to specific paths.
-	void createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm);
+	void createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions);
 
 	// Reads and applies writes that are found from journal. If
 	// journal does not exist, then this function does nothing.
@@ -174,14 +175,14 @@ private:
 	// returned that was originally used.
 	Hpp::ByteV doRemoving(Hpp::ByteV const& root,
 	                      Hpp::Path const& path,
-	                      std::ostream* strm);
+	                      Useroptions const& useroptions);
 
 	// Make new folder and return new root node that is spawned from
 	// this operation. If path already exists, then exception is thrown.
 	Hpp::ByteV doMakingOfNewFolder(Hpp::ByteV const& root,
 	                               Hpp::Path const& path,
 	                               Nodes::FsMetadata const& fsmetadata,
-	                               std::ostream* strm);
+	                               Useroptions const& useroptions);
 
 	// Replaces last (deepest) folder in path and updates all its parents
 	// too. Finally it returns hash of new root. If some nodes does not
@@ -270,18 +271,18 @@ private:
 
 	// Reads multiple files/folders/symlinks, converts them to Nodes
 	// in archive, and returns those new Nodes as Children of Folder.
-	void readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& source, std::ostream* strm);
+	void readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& source, Useroptions const& useroptions);
 
 	// Reads file hierarchy and converts it to the Node(s)
 	// in archive. Returns hash of given file/folder/symlink and type.
-	void readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source, std::ostream* strm);
+	void readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source, Useroptions const& useroptions);
 
 	// Extracts given Node to given target. If Node is Folder, then
 	// this function is called recursively for all of its children.
 	void extractRecursively(Hpp::ByteV const& hash,
 	                        Nodes::FsMetadata const& fsmetadata,
 	                        Hpp::Path const& target,
-	                        std::ostream* strm);
+	                        Useroptions const& useroptions);
 
 	// Generates crypto key from password and salt
 	static Hpp::ByteV generateCryptoKey(std::string const& password, Hpp::ByteV const& salt);

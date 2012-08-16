@@ -1,6 +1,7 @@
 #ifndef ARCHIVER_H
 #define ARCHIVER_H
 
+#include "useroptions.h"
 #include "archive.h"
 
 #include <hpp/path.h>
@@ -17,13 +18,13 @@ public:
 	void printDebugInformation(void);
 
 	// Archive modification functions
-	void put(Paths const& sources, Hpp::Path const& dest, std::ostream* strm);
-	void remove(Paths const& paths, std::ostream* strm);
-	void snapshot(std::string const& snapshot, Paths const& sources, std::ostream* strm);
-	void createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, std::ostream* strm);
+	void put(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions);
+	void remove(Paths const& paths, Useroptions const& useroptions);
+	void snapshot(std::string const& snapshot, Paths const& sources, Useroptions const& useroptions);
+	void createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions);
 
 	// Archive query/and get functions
-	void get(Paths const& sources, Hpp::Path const& dest, std::ostream* strm);
+	void get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions);
 
 	// Write possible interrupted journal and clean possible orphans.
 	void fixPossibleErrors(void);

@@ -1,5 +1,6 @@
 #include "archiver.h"
 #include "types.h"
+#include "useroptions.h"
 
 #include <hpp/arguments.h>
 #include <hpp/path.h>
@@ -38,7 +39,7 @@ void run(int argc, char** argv)
 	std::vector< std::string > extra_args;
 	std::string password;
 	Action action = ACTION_NOTHING;
-	std::ostream* verbose_strm = NULL;
+	Useroptions useroptions;
 
 	std::string arg;
 	while (!(arg = args.parse()).empty()) {
@@ -52,7 +53,7 @@ void run(int argc, char** argv)
 
 		} else if (arg == "--verbose") {
 
-			verbose_strm = &std::cout;
+			useroptions.verbose = &std::cout;
 
 		} else {
 			extra_args.push_back(arg);
@@ -305,13 +306,13 @@ void run(int argc, char** argv)
 
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
-		archiver.put(sources, targets[0], verbose_strm);
+		archiver.put(sources, targets[0], useroptions);
 		archiver.optimize();
 	} else if (action == ACTION_GET) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
-		archiver.get(sources, targets[0], verbose_strm);
+		archiver.get(sources, targets[0], useroptions);
 	} else if (action == ACTION_REMOVE) {
-		archiver.remove(targets, verbose_strm);
+		archiver.remove(targets, useroptions);
 		archiver.optimize();
 	} else if (action == ACTION_MOVE) {
 // TODO: Code this!
@@ -320,9 +321,9 @@ HppAssert(false, "Not implemented yet!");
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_MKDIR) {
-		archiver.createNewFolders(targets, fsmetadata, verbose_strm);
+		archiver.createNewFolders(targets, fsmetadata, useroptions);
 	} else if (action == ACTION_SNAPSHOT) {
-		archiver.snapshot(snapshot, sources, verbose_strm);
+		archiver.snapshot(snapshot, sources, useroptions);
 		archiver.optimize();
 	} else if (action == ACTION_DESTROY) {
 // TODO: Code this!
@@ -336,10 +337,10 @@ HppAssert(false, "Not implemented yet!");
 		snapshot_path_v.push_back(snapshot_path);
 		if (targets.empty()) {
 			Hpp::Path target = Hpp::Path(snapshot);
-			archiver.get(snapshot_path_v, target, verbose_strm);
+			archiver.get(snapshot_path_v, target, useroptions);
 		} else {
 			HppAssert(targets.size() == 1, "Expecting exactly one target!");
-			archiver.get(snapshot_path_v, targets[0], verbose_strm);
+			archiver.get(snapshot_path_v, targets[0], useroptions);
 		}
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation();
