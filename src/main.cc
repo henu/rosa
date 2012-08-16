@@ -18,6 +18,8 @@ void run(int argc, char** argv)
 	args.addAlias("-p", "--password");
 	args.addArgument("--verbose", "", "Displays more information");
 	args.addAlias("-v", "--verbose");
+	args.addArgument("--level", "<LEVEL>", "Sets compression level");
+	args.addAlias("-l", "--level");
 
 	// Options
 	enum Action {
@@ -53,6 +55,25 @@ void run(int argc, char** argv)
 
 		} else if (arg == "--verbose") {
 
+			useroptions.verbose = &std::cout;
+
+		} else if (arg == "--level") {
+
+			if (args.argsLeft() == 0) {
+				throw Hpp::Exception("Missing compression level!");
+			}
+			std::string compression_level_str = args.popArgument();
+			if (compression_level_str == "nothing") {
+				useroptions.compression_level = Hpp::Compressor::NO_COMPRESSION;
+			} else if (compression_level_str == "fast") {
+				useroptions.compression_level = Hpp::Compressor::FAST;
+			} else if (compression_level_str == "default") {
+				useroptions.compression_level = Hpp::Compressor::DEFAULT_COMPRESSION;
+			} else if (compression_level_str == "best") {
+				useroptions.compression_level = Hpp::Compressor::BEST;
+			} else {
+				throw Hpp::Exception("Invalid compression level! Valid options are: nothing, fast, default and best.");
+			}
 			useroptions.verbose = &std::cout;
 
 		} else {
@@ -261,20 +282,25 @@ void run(int argc, char** argv)
 	if (action == ACTION_NOTHING) {
 		std::cout << "Usage:" << std::endl;
 		std::cout << "\tSnapshot way:" << std::endl;
-		std::cout << "\t\t" << argv[0] << " snapshot [-v] <ARCHIVE> <SNAPSHOT> <SOURCE_1> [SOURCE_2 ... SOURCE_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " destroy [-v] <ARCHIVE> <SNAPSHOT>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " rename [-v] <ARCHIVE> <SNAPSHOT_OLDNAME> <SNAPSHOT_NEWNAME>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " restore [-v] <ARCHIVE> <SNAPSHOT> [TARGET]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " snapshot <ARCHIVE> <SNAPSHOT> <SOURCE_1> [SOURCE_2 ... SOURCE_N]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " destroy <ARCHIVE> <SNAPSHOT>" << std::endl;
+		std::cout << "\t\t" << argv[0] << " rename <ARCHIVE> <SNAPSHOT_OLDNAME> <SNAPSHOT_NEWNAME>" << std::endl;
+		std::cout << "\t\t" << argv[0] << " restore <ARCHIVE> <SNAPSHOT> [TARGET]" << std::endl;
 		std::cout << "\tBasic way:" << std::endl;
-		std::cout << "\t\t" << argv[0] << " put [-v] <ARCHIVE> <SOURCE_1> [SOURCE_2 ... SOURCE_N] <TARGET>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " get [-v] <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " mv/move [-v] <ARCHIVE> <PATH_FROM> <PATH_TO>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " ls/list [-v] <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " mkdir [-v] <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " put <ARCHIVE> <SOURCE_1> [SOURCE_2 ... SOURCE_N] <TARGET>" << std::endl;
+		std::cout << "\t\t" << argv[0] << " get <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " mv/move <ARCHIVE> <PATH_FROM> <PATH_TO>" << std::endl;
+		std::cout << "\t\t" << argv[0] << " ls/list <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " mkdir <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
 		std::cout << "\tExtra commands:" << std::endl;
 		std::cout << "\t\t" << argv[0] << " debug <ARCHIVE>" << std::endl;
 		std::cout << "\t\t" << argv[0] << " verify <ARCHIVE>" << std::endl;
 		std::cout << "\t\t" << argv[0] << " optimize <ARCHIVE>" << std::endl;
+		std::cout << "Global options:" << std::endl;
+		std::cout << "\t--verbose / -v" << std::endl;
+		std::cout << "\t\tPrints more output." << std::endl;
+		std::cout << "\t--level/ -l <LEVEL>" << std::endl;
+		std::cout << "\t\tSets compression level. Valid options are: nothing, fast, default, best." << std::endl;
 		return;
 	}
 
@@ -290,7 +316,7 @@ void run(int argc, char** argv)
 	}
 
 	// First open archive
-	Archiver archiver(archive, password, create_if_does_not_exist);
+	Archiver archiver(archive, password, create_if_does_not_exist, useroptions);
 
 	// In case of writes, fix possible errors first
 	if (action == ACTION_PUT ||
@@ -306,13 +332,13 @@ void run(int argc, char** argv)
 
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
-		archiver.put(sources, targets[0], useroptions);
+		archiver.put(sources, targets[0]);
 		archiver.optimize();
 	} else if (action == ACTION_GET) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
-		archiver.get(sources, targets[0], useroptions);
+		archiver.get(sources, targets[0]);
 	} else if (action == ACTION_REMOVE) {
-		archiver.remove(targets, useroptions);
+		archiver.remove(targets);
 		archiver.optimize();
 	} else if (action == ACTION_MOVE) {
 // TODO: Code this!
@@ -321,9 +347,9 @@ HppAssert(false, "Not implemented yet!");
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_MKDIR) {
-		archiver.createNewFolders(targets, fsmetadata, useroptions);
+		archiver.createNewFolders(targets, fsmetadata);
 	} else if (action == ACTION_SNAPSHOT) {
-		archiver.snapshot(snapshot, sources, useroptions);
+		archiver.snapshot(snapshot, sources);
 		archiver.optimize();
 	} else if (action == ACTION_DESTROY) {
 // TODO: Code this!
@@ -337,10 +363,10 @@ HppAssert(false, "Not implemented yet!");
 		snapshot_path_v.push_back(snapshot_path);
 		if (targets.empty()) {
 			Hpp::Path target = Hpp::Path(snapshot);
-			archiver.get(snapshot_path_v, target, useroptions);
+			archiver.get(snapshot_path_v, target);
 		} else {
 			HppAssert(targets.size() == 1, "Expecting exactly one target!");
-			archiver.get(snapshot_path_v, targets[0], useroptions);
+			archiver.get(snapshot_path_v, targets[0]);
 		}
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation();

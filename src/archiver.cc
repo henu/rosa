@@ -4,7 +4,8 @@
 
 #include <iostream>
 
-Archiver::Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist)
+Archiver::Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions) :
+archive(useroptions)
 {
 	if (path.exists()) {
 		archive.open(path, password);
@@ -96,39 +97,39 @@ void Archiver::printDebugInformation(void)
 
 }
 
-void Archiver::put(Paths const& src, Hpp::Path const& dest, Useroptions const& useroptions)
+void Archiver::put(Paths const& src, Hpp::Path const& dest)
 {
-	archive.put(src, dest, useroptions);
+	archive.put(src, dest);
 }
 
-void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions)
+void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata)
 {
-	archive.createNewFolders(paths, fsmetadata, useroptions);
+	archive.createNewFolders(paths, fsmetadata);
 }
 
-void Archiver::get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions)
+void Archiver::get(Paths const& sources, Hpp::Path const& dest)
 {
-	archive.get(sources, dest, useroptions);
+	archive.get(sources, dest);
 }
 
-void Archiver::remove(Paths const& paths, Useroptions const& useroptions)
+void Archiver::remove(Paths const& paths)
 {
-	archive.remove(paths, useroptions);
+	archive.remove(paths);
 }
 
-void Archiver::snapshot(std::string const& snapshot, Paths const& sources, Useroptions const& useroptions)
+void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 {
 // TODO: In future, use some asking system to tell that if folder already exists, then do not create it!
 	Hpp::Path snapshot_path = Hpp::Path("/") / snapshot;
 	try {
 		Nodes::FsMetadata fsmetadata;
 		fsmetadata.readFromCurrentEnvironment();
-		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata, useroptions.getWithoutVerbose());
+		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata);
 	}
 	catch (Hpp::Exception) {
 	}
 
-	archive.put(sources, snapshot_path, useroptions);
+	archive.put(sources, snapshot_path);
 }
 
 void Archiver::fixPossibleErrors(void)

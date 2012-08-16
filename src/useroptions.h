@@ -1,22 +1,19 @@
 #ifndef USEROPTIONS_H
 #define USEROPTIONS_H
 
+#include <hpp/compressor.h>
 #include <ostream>
 
 struct Useroptions
 {
 	std::ostream* verbose;
 
-	inline Useroptions(void) :
-	verbose(NULL)
-	{
-	}
+	int compression_level;
 
-	inline Useroptions getWithoutVerbose(void) const
+	inline Useroptions(void) :
+	verbose(NULL),
+	compression_level(Hpp::Compressor::DEFAULT_COMPRESSION)
 	{
-		Useroptions result(*this);
-		result.verbose = NULL;
-		return result;
 	}
 
 };

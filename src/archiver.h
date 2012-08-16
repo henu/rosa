@@ -12,19 +12,19 @@ class Archiver
 public:
 
 	// If password protection is needed, then give non-empty password.
-	Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist);
+	Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions);
 
 	// Prints debug information to standard output
 	void printDebugInformation(void);
 
 	// Archive modification functions
-	void put(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions);
-	void remove(Paths const& paths, Useroptions const& useroptions);
-	void snapshot(std::string const& snapshot, Paths const& sources, Useroptions const& useroptions);
-	void createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata, Useroptions const& useroptions);
+	void put(Paths const& sources, Hpp::Path const& dest);
+	void remove(Paths const& paths);
+	void snapshot(std::string const& snapshot, Paths const& sources);
+	void createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata);
 
 	// Archive query/and get functions
-	void get(Paths const& sources, Hpp::Path const& dest, Useroptions const& useroptions);
+	void get(Paths const& sources, Hpp::Path const& dest);
 
 	// Write possible interrupted journal and clean possible orphans.
 	void fixPossibleErrors(void);
