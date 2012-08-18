@@ -40,6 +40,9 @@ public:
 	// one source. Otherwise exception is thrown.
 	void get(Paths const& sources, Hpp::Path const& dest);
 
+	// Lists contents of given path to the stream.
+	void list(Hpp::Path path, std::ostream* strm);
+
 	void remove(Paths const& paths);
 
 	// Creates new, empty folders to specific paths.

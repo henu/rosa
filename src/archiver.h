@@ -5,6 +5,7 @@
 #include "archive.h"
 
 #include <hpp/path.h>
+#include <ostream>
 
 class Archiver
 {
@@ -15,7 +16,7 @@ public:
 	Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions);
 
 	// Prints debug information to standard output
-	void printDebugInformation(void);
+	void printDebugInformation(std::ostream* strm);
 
 	// Archive modification functions
 	void put(Paths const& sources, Hpp::Path const& dest);
@@ -25,6 +26,7 @@ public:
 
 	// Archive query/and get functions
 	void get(Paths const& sources, Hpp::Path const& dest);
+	void list(Hpp::Path const& path, std::ostream* strm);
 
 	// Write possible interrupted journal and clean possible orphans.
 	void fixPossibleErrors(void);
@@ -37,7 +39,7 @@ private:
 
 	Archive archive;
 
-	void recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent);
+	void recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent, std::ostream* strm);
 
 };
 

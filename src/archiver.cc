@@ -2,8 +2,6 @@
 
 #include "nodes/folder.h"
 
-#include <iostream>
-
 Archiver::Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions) :
 archive(useroptions)
 {
@@ -17,83 +15,83 @@ archive(useroptions)
 	}
 }
 
-void Archiver::printDebugInformation(void)
+void Archiver::printDebugInformation(std::ostream* strm)
 {
-	std::cout << "Password protected: ";
-	if (archive.isPasswordProtected()) std::cout << "Yes";
-	else std::cout << "No";
-	std::cout << std::endl;
+	(*strm) << "Password protected: ";
+	if (archive.isPasswordProtected()) (*strm) << "Yes";
+	else (*strm) << "No";
+	(*strm) << std::endl;
 
 	if (archive.isPasswordProtected()) {
-		std::cout << "  * Password verifier: " << Hpp::byteVToHexV(archive.getPasswordVerifier()) << std::endl;
+		(*strm) << "  * Password verifier: " << Hpp::byteVToHexV(archive.getPasswordVerifier()) << std::endl;
 	}
 
-	std::cout << "Root node: " << Hpp::byteVToHexV(archive.getRootReference()) << std::endl;
+	(*strm) << "Root node: " << Hpp::byteVToHexV(archive.getRootReference()) << std::endl;
 
-	std::cout << "Space allocated for metadata (sorted/unsorted): " << archive.getSortedMetadataAllocation() << "/" << archive.getUnsortedMetadataAllocation() << std::endl;
+	(*strm) << "Space allocated for metadata (sorted/unsorted): " << archive.getSortedMetadataAllocation() << "/" << archive.getUnsortedMetadataAllocation() << std::endl;
 
-	std::cout << "End of data section: " << archive.getDataSectionEnd() << std::endl;
+	(*strm) << "End of data section: " << archive.getDataSectionEnd() << std::endl;
 
-	std::cout << "Journal: ";
-	if (archive.getJournalFlag()) std::cout << "Yes";
-	else std::cout << "No";
-	std::cout << std::endl;
+	(*strm) << "Journal: ";
+	if (archive.getJournalFlag()) (*strm) << "Yes";
+	else (*strm) << "No";
+	(*strm) << std::endl;
 
 	if (archive.getJournalFlag()) {
-		std::cout << "  * Location: " << archive.getJournalLocation() << std::endl;
+		(*strm) << "  * Location: " << archive.getJournalLocation() << std::endl;
 	}
 
-	std::cout << "Possible orphan nodes: ";
-	if (archive.getOrphanNodesFlag()) std::cout << "Yes";
-	else std::cout << "No";
-	std::cout << std::endl;
+	(*strm) << "Possible orphan nodes: ";
+	if (archive.getOrphanNodesFlag()) (*strm) << "Yes";
+	else (*strm) << "No";
+	(*strm) << std::endl;
 
-	std::cout << "Sorted metadata:" << std::endl;
+	(*strm) << "Sorted metadata:" << std::endl;
 	for (size_t metadata_ofs = 0;
 	     metadata_ofs < archive.getSortedMetadataAllocation();
 	     ++ metadata_ofs) {
 		Nodes::Metadata metadata = archive.getSortedMetadata(metadata_ofs);
-		std::cout << "  " << metadata_ofs << " " << metadata << std::endl;
+		(*strm) << "  " << metadata_ofs << " " << metadata << std::endl;
 	}
 
-	std::cout << "Unsorted metadata:" << std::endl;
+	(*strm) << "Unsorted metadata:" << std::endl;
 	for (size_t metadata_ofs = 0;
 	     metadata_ofs < archive.getUnsortedMetadataAllocation();
 	     ++ metadata_ofs) {
 		Nodes::Metadata metadata = archive.getUnsortedMetadata(metadata_ofs);
-		std::cout << "  " << metadata_ofs << " " << metadata << std::endl;
+		(*strm) << "  " << metadata_ofs << " " << metadata << std::endl;
 	}
 
-	std::cout << "Data entries:" << std::endl;
+	(*strm) << "Data entries:" << std::endl;
 	for (size_t dataentries_ofs = archive.getDataSectionBegin();
 	      dataentries_ofs < archive.getDataSectionEnd();
 	      dataentries_ofs = archive.getNextDataEntry(dataentries_ofs)) {
 		Nodes::DataEntry de = archive.getDataEntry(dataentries_ofs, false);
-		std::cout << "  " << dataentries_ofs << " " << de.size;
+		(*strm) << "  " << dataentries_ofs << " " << de.size;
 		if (de.empty) {
-			std::cout << " (empty)";
+			(*strm) << " (empty)";
 		} else {
 			switch (de.type) {
 			case Nodes::TYPE_FILE:
-				std::cout << " (file)";
+				(*strm) << " (file)";
 				break;
 			case Nodes::TYPE_FOLDER:
-				std::cout << " (folder)";
+				(*strm) << " (folder)";
 				break;
 			case Nodes::TYPE_SYMLINK:
-				std::cout << " (symlink)";
+				(*strm) << " (symlink)";
 				break;
 			case Nodes::TYPE_DATABLOCK:
-				std::cout << " (datablock)";
+				(*strm) << " (datablock)";
 				break;
 			}
 		}
-		std::cout << std::endl;
+		(*strm) << std::endl;
 	}
 
-	std::cout << "Directory structure:" << std::endl;
-	std::cout << "* <root>" << std::endl;
-	recursivelyPrintChildren(archive.getRootReference(), "");
+	(*strm) << "Directory structure:" << std::endl;
+	(*strm) << "* <root>" << std::endl;
+	recursivelyPrintChildren(archive.getRootReference(), "", strm);
 
 }
 
@@ -110,6 +108,11 @@ void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsm
 void Archiver::get(Paths const& sources, Hpp::Path const& dest)
 {
 	archive.get(sources, dest);
+}
+
+void Archiver::list(Hpp::Path const& path, std::ostream* strm)
+{
+	archive.list(path, strm);
 }
 
 void Archiver::remove(Paths const& paths)
@@ -143,7 +146,7 @@ void Archiver::optimize(void)
 	archive.optimizeMetadata();
 }
 
-void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent)
+void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent, std::ostream* strm)
 {
 	// Get this node as Folder
 	Nodes::Folder folder(archive.getNodeData(node_hash));
@@ -153,22 +156,22 @@ void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string
 	     child = folder.getNextChild(child)) {
 		Nodes::FsType child_type = folder.getChildType(child);
 
-		std::cout << indent;
+		(*strm) << indent;
 
 		// If this is last child, then print different kind of junction
 		std::string child_indent = indent;
 		if (folder.getNextChild(child) == "") {
-			std::cout << "`-";
+			(*strm) << "`-";
 			child_indent += "  ";
 		} else {
-			std::cout << "+-";
+			(*strm) << "+-";
 			child_indent += "| ";
 		}
 
-		std::cout << "* " << child << std::endl;
+		(*strm) << "* " << child << std::endl;
 
 		if (child_type == Nodes::FSTYPE_FOLDER) {
-			recursivelyPrintChildren(folder.getChildHash(child), child_indent);
+			recursivelyPrintChildren(folder.getChildHash(child), child_indent, strm);
 		}
 	}
 }

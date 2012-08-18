@@ -236,6 +236,39 @@ void Archive::get(Paths const& sources, Hpp::Path const& dest)
 
 }
 
+void Archive::list(Hpp::Path path, std::ostream* strm)
+{
+	path.forceToAbsolute();
+	Nodes::Folders fpath;
+	bool fpath_is_from_parent = false;
+	try {
+		fpath = getFoldersToPath(root_ref, path);
+	}
+	catch (Hpp::Exception) {
+		// If path does not exist, then check
+		// if it points to single file
+		if (path.hasParent()) {
+			Hpp::Path parent = path.getParent();
+			fpath = getFoldersToPath(root_ref, parent);
+			fpath_is_from_parent = true;
+		} else {
+			throw;
+		}
+	}
+	Nodes::Folder const& folder = fpath.back();
+	if (fpath_is_from_parent) {
+		if (folder.hasChild(path.getFilename())) {
+			(*strm) << path.toString() << std::endl;
+		}
+		return;
+	}
+	for (std::string child = folder.getFirstChild();
+	     !child.empty();
+	     child = folder.getNextChild(child)) {
+		(*strm) << child << std::endl;
+	}
+}
+
 void Archive::remove(Paths const& paths)
 {
 	// Ensure all paths exist!

@@ -351,8 +351,12 @@ void run(int argc, char** argv)
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_LIST) {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
+		for (Paths::const_iterator targets_it = targets.begin();
+		     targets_it != targets.end();
+		     ++ targets_it) {
+			Hpp::Path const& target = *targets_it;
+			archiver.list(target, &std::cout);
+		}
 	} else if (action == ACTION_MKDIR) {
 		archiver.createNewFolders(targets, fsmetadata);
 	} else if (action == ACTION_SNAPSHOT) {
@@ -376,7 +380,7 @@ HppAssert(false, "Not implemented yet!");
 			archiver.get(snapshot_path_v, targets[0]);
 		}
 	} else if (action == ACTION_DEBUG) {
-		archiver.printDebugInformation();
+		archiver.printDebugInformation(&std::cout);
 	} else if (action == ACTION_VERIFY) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
