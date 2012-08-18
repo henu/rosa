@@ -299,6 +299,7 @@ void run(int argc, char** argv)
 		std::cout << "\t\t" << argv[0] << " mv/move <ARCHIVE> <PATH_FROM> <PATH_TO>" << std::endl;
 		std::cout << "\t\t" << argv[0] << " ls/list <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
 		std::cout << "\t\t" << argv[0] << " mkdir <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
+		std::cout << "\t\t" << argv[0] << " rm/remove <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
 		std::cout << "\tExtra commands:" << std::endl;
 		std::cout << "\t\t" << argv[0] << " debug <ARCHIVE>" << std::endl;
 		std::cout << "\t\t" << argv[0] << " verify <ARCHIVE>" << std::endl;
@@ -363,8 +364,9 @@ HppAssert(false, "Not implemented yet!");
 		archiver.snapshot(snapshot, sources);
 		archiver.optimize();
 	} else if (action == ACTION_DESTROY) {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
+		targets = Paths(1, Hpp::Path::getRoot() / snapshot);
+		archiver.remove(targets);
+		archiver.optimize();
 	} else if (action == ACTION_RENAME) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
