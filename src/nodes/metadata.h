@@ -14,7 +14,7 @@ namespace Nodes
 
 struct Metadata
 {
-	static size_t const ENTRY_SIZE = 81;
+	static size_t const ENTRY_SIZE = 80;
 
 	bool empty;
 	Hpp::ByteV hash;
@@ -40,9 +40,9 @@ struct Metadata
 		if (!empty) {
 			HppAssert(serialized.size() == ENTRY_SIZE, "Invalid serialized size!");
 			hash.insert(hash.end(), serialized.begin() + 1, serialized.begin() + 1 + NODE_HASH_SIZE);
-			refs = Hpp::cStrToUInt32(&serialized[1 + NODE_HASH_SIZE]);
-			data_loc = Hpp::cStrToUInt64(&serialized[1 + NODE_HASH_SIZE + 4]);
-			data_size_uncompressed = Hpp::cStrToUInt32(&serialized[1 + NODE_HASH_SIZE + 12]);
+			refs = Hpp::cStrToUInt(&serialized[1 + NODE_HASH_SIZE], 3);
+			data_loc = Hpp::cStrToUInt64(&serialized[1 + NODE_HASH_SIZE + 3]);
+			data_size_uncompressed = Hpp::cStrToUInt32(&serialized[1 + NODE_HASH_SIZE + 11]);
 		}
 	}
 
@@ -56,7 +56,7 @@ struct Metadata
 			result.reserve(ENTRY_SIZE);
 			result.push_back(Hpp::randomInt(0, 127));
 			result += hash;
-			result += Hpp::uInt32ToByteV(refs);
+			result += Hpp::uIntToByteV(refs, 3);
 			result += Hpp::uInt64ToByteV(data_loc);
 			result += Hpp::uInt32ToByteV(data_size_uncompressed);
 			HppAssert(result.size() == ENTRY_SIZE, "Invalid serialized size!");

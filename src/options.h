@@ -1,7 +1,7 @@
 #ifndef OPTIONS_H
 #define OPTIONS_H
 
-#define ARCHIVE_IDENTIFIER ("SPAK")
+#define ARCHIVE_IDENTIFIER ("ROSA")
 
 size_t const SALT_SIZE = 64;
 size_t const PASSWORD_VERIFIER_SIZE = 64;
