@@ -753,7 +753,7 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 
 bool Archive::verifyReferences(bool throw_exception)
 {
-	size_t const MAX_CHECK_AMOUNT_PER_ITERATION = 500;
+	size_t const MAX_CHECK_AMOUNT_PER_ITERATION = 5000;
 
 	size_t metadata_ofs = 0;
 	while (metadata_ofs < metas_s_size + metas_us_size) {
