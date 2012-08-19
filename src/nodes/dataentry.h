@@ -9,7 +9,7 @@
 namespace Nodes
 {
 
-struct DataEntry
+struct Dataentry
 {
 	static size_t const HEADER_SIZE = 4;
 
@@ -24,10 +24,10 @@ struct DataEntry
 	uint32_t size;
 	Hpp::ByteV data;
 
-	DataEntry(void)
+	Dataentry(void)
 	{
 	}
-	DataEntry(Hpp::ByteV const& serialized)
+	Dataentry(Hpp::ByteV const& serialized)
 	{
 		HppAssert(serialized.size() == HEADER_SIZE, "Invalid serialized size!");
 		empty = serialized[0] & MASK_EMPTY_8;

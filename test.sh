@@ -14,6 +14,12 @@ verifyArchive() {
 		echo "There are orphans, even if header claims there should not be any!"
 		exit 1
 	fi
+	if [ "$1" = "" ]
+	then
+		./rosa verify testdata/archive.rosa
+	else
+		./rosa verify testdata/archive.rosa -p $1
+	fi
 }
 
 echo "Compiling"
@@ -65,21 +71,21 @@ rm testdata/archive.rosa
 
 echo "Taking first snapshot of encrypted archive"
 ./rosa -p test snapshot testdata/archive.rosa yesterday testdata/1
-verifyArchive
+verifyArchive test
 
 echo "Taking second snapshot of encrypted archive"
 ./rosa -p test snapshot testdata/archive.rosa today testdata/2
-verifyArchive
+verifyArchive test
 
 echo "Taking third snapshot of encrypted archive"
 ./rosa -p test snapshot testdata/archive.rosa tomorrow testdata/3
-verifyArchive
+verifyArchive test
 
 echo "Modifying encrypted archive"
 ./rosa -p test remove testdata/archive.rosa today/2/mercurial-2.1.2/contrib /yesterday/1/mercurial-1.7.4/README
-verifyArchive
+verifyArchive test
 ./rosa -p test mkdir testdata/archive.rosa today/2/lol /test_omg
-verifyArchive
+verifyArchive test
 
 echo "Cleaning"
 rm -rf testdata

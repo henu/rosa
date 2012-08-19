@@ -65,8 +65,8 @@ void Archiver::printDebugInformation(std::ostream* strm)
 	(*strm) << "Data entries:" << std::endl;
 	for (size_t dataentries_ofs = archive.getDataSectionBegin();
 	      dataentries_ofs < archive.getDataSectionEnd();
-	      dataentries_ofs = archive.getNextDataEntry(dataentries_ofs)) {
-		Nodes::DataEntry de = archive.getDataEntry(dataentries_ofs, false);
+	      dataentries_ofs = archive.getNextDataentry(dataentries_ofs)) {
+		Nodes::Dataentry de = archive.getDataentry(dataentries_ofs, false);
 		(*strm) << "  " << dataentries_ofs << " " << de.size;
 		if (de.empty) {
 			(*strm) << " (empty)";
@@ -144,6 +144,13 @@ void Archiver::fixPossibleErrors(void)
 void Archiver::optimize(void)
 {
 	archive.optimizeMetadata();
+}
+
+void Archiver::verify(void)
+{
+	archive.verifyDataentriesAreValid(true);
+	archive.verifyNoDoubleMetadatas(true);
+	archive.verifyReferences(true);
 }
 
 void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent, std::ostream* strm)

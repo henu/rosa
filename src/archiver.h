@@ -35,6 +35,9 @@ public:
 	// metadata, filling empty gaps in arrays, etc.
 	void optimize(void);
 
+	// Verfies everything is okay
+	void verify(void);
+
 private:
 
 	Archive archive;

@@ -384,8 +384,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation(&std::cout);
 	} else if (action == ACTION_VERIFY) {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
+		archiver.verify();
 	} else if (action == ACTION_OPTIMIZE) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
@@ -399,6 +398,14 @@ int main(int argc, char** argv)
 		run(argc, argv);
 	}
 	catch (Hpp::Exception const& e) {
+		std::cout << "ERROR: " << e.what() << std::endl;
+		return EXIT_FAILURE;
+	}
+	catch (std::bad_alloc const& e) {
+		std::cout << "ERROR: Out of memory!" << std::endl;
+		return EXIT_FAILURE;
+	}
+	catch (std::exception const& e) {
 		std::cout << "ERROR: " << e.what() << std::endl;
 		return EXIT_FAILURE;
 	}

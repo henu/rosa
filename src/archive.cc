@@ -33,7 +33,7 @@ void Archive::open(Hpp::Path const& path, std::string const& password)
 
 	loadStateFromFile(password);
 
-	HppAssert(verifyDataentries(), "Dataentries are broken!");
+	HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
 }
 
 void Archive::create(Hpp::Path const& path, std::string const& password)
@@ -107,6 +107,7 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	// Write to disk
 	io.flush();
 
+	HppAssert(verifyReferences(), "Reference counts have failed!");
 }
 
 void Archive::put(Paths const& src, Hpp::Path const& dest)
@@ -404,7 +405,7 @@ void Archive::finishPossibleInterruptedJournal(void)
 		// Because state of file has changed, it needs to be loaded again.
 		loadStateFromFile("");
 
-		HppAssert(verifyDataentries(), "Data is failed after applying of interrupted journal!");
+		HppAssert(verifyDataentriesAreValid(), "Data is failed after applying of interrupted journal!");
 
 	}
 }
@@ -432,7 +433,7 @@ void Archive::optimizeMetadata(void)
 			++ metas_us_size;
 		}
 		io.doJournalAndWrites(writesRootRefAndCounts());
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 		// Then, if needed, allocate more space for unsorted metadata
 		ssize_t metas_us_size_target = metadatas_to_sort * 2;
@@ -461,7 +462,7 @@ void Archive::optimizeMetadata(void)
 				writes += writesMetadata(empty_metadata, cleaner);
 				writes += writesMetadata(metadata, next_cleaner_dump_pos);
 				io.doJournalAndWrites(writes);
-				HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+				HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 				-- next_cleaner_dump_pos;
 			}
 			// This slot is cleaned, move to previous one
@@ -507,7 +508,7 @@ void Archive::optimizeMetadata(void)
 				++ target_pos;
 			}
 			io.doJournalAndWrites(writes);
-			HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+			HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 		}
 
 		// Minimize unsorted section and increase size of sorted one
@@ -515,7 +516,7 @@ void Archive::optimizeMetadata(void)
 		metas_s_size += metas_us_size - metadatas_to_sort;
 		metas_us_size = metadatas_to_sort;
 		io.doJournalAndWrites(writesRootRefAndCounts());
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 		// Now move combine all metadatas to sorted section
 		ssize_t s_read = (ssize_t)metas_s_oldsize - 1;
@@ -553,7 +554,7 @@ void Archive::optimizeMetadata(void)
 				s_meta = getNodeMetadata(s_read);
 			}
 			io.doJournalAndWrites(writes);
-			HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+			HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 		}
 
 	}
@@ -576,24 +577,24 @@ void Archive::optimizeMetadata(void)
 		writes += writesMetadata(empty_metadata, read);
 		writes += writesMetadata(metadata, write);
 		io.doJournalAndWrites(writes);
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 		++ read;
 		++ write;
 	}
 	metas_us_size += (metas_s_size - write);
 	metas_s_size = write;
 	io.doJournalAndWrites(writesRootRefAndCounts());
-	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	// Shrink empty unsorted section to zero
 	if (metas_us_size > 0) {
 		Writes writes;
 		size_t metas_us_oldsize = metas_us_size;
 		metas_us_size = 0;
-		writes += writesEmpty(getSectionBegin(SECTION_DATA), metas_us_oldsize * Nodes::Metadata::ENTRY_SIZE - Nodes::DataEntry::HEADER_SIZE, true);
+		writes += writesEmpty(getSectionBegin(SECTION_DATA), metas_us_oldsize * Nodes::Metadata::ENTRY_SIZE - Nodes::Dataentry::HEADER_SIZE, true);
 		writes += writesRootRefAndCounts();
 		io.doJournalAndWrites(writes);
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 	}
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
@@ -615,30 +616,27 @@ Nodes::Metadata Archive::getUnsortedMetadata(size_t metadata_ofs)
 	return getNodeMetadata(metas_s_size + metadata_ofs);
 }
 
-uint64_t Archive::getNextDataEntry(uint64_t data_entry_loc)
+uint64_t Archive::getNextDataentry(uint64_t data_entry_loc)
 {
-	Nodes::DataEntry de = getDataEntry(data_entry_loc, false);
-	return data_entry_loc + Nodes::DataEntry::HEADER_SIZE + de.size;
+	Nodes::Dataentry de = getDataentry(data_entry_loc, false);
+	return data_entry_loc + Nodes::Dataentry::HEADER_SIZE + de.size;
 }
 
-Nodes::DataEntry Archive::getDataEntry(uint64_t loc, bool read_data, bool extract_data)
+Nodes::Dataentry Archive::getDataentry(uint64_t loc, bool read_data, bool extract_data)
 {
-	if (loc + Nodes::DataEntry::HEADER_SIZE > datasec_end) {
+	if (loc + Nodes::Dataentry::HEADER_SIZE > datasec_end) {
 		throw Hpp::Exception("Trying to read data entry that is beyond data section!");
 	}
 	if (loc < getSectionBegin(SECTION_DATA)) {
 		throw Hpp::Exception("Data section underflow!");
 	}
-	Hpp::ByteV de_header = io.readPart(loc, Nodes::DataEntry::HEADER_SIZE);
-	Nodes::DataEntry result(de_header);
-	if (loc + Nodes::DataEntry::HEADER_SIZE + result.size > datasec_end) {
+	Hpp::ByteV de_header = io.readPart(loc, Nodes::Dataentry::HEADER_SIZE);
+	Nodes::Dataentry result(de_header);
+	if (loc + Nodes::Dataentry::HEADER_SIZE + result.size > datasec_end) {
 		throw Hpp::Exception("Invalid data entry! Its size seems to overflow beyond data section!");
 	}
-	if (read_data) {
-		if (result.empty) {
-			throw Hpp::Exception("Trying to read data of empty dataentry!");
-		}
-		result.data = io.readPart(loc + Nodes::DataEntry::HEADER_SIZE, result.size);
+	if (read_data && !result.empty) {
+		result.data = io.readPart(loc + Nodes::Dataentry::HEADER_SIZE, result.size);
 		if (extract_data) {
 			// Read and extract data
 			Hpp::Decompressor decompressor;
@@ -695,7 +693,7 @@ inline bool Archive::pathExists(Hpp::Path const& path)
 	return true;
 }
 
-bool Archive::verifyDataentries(bool throw_exception)
+bool Archive::verifyDataentriesAreValid(bool throw_exception)
 {
 	size_t nodes_size1 = getAmountOfNonemptyMetadataslotsAtRange(0, metas_s_size + metas_us_size);
 
@@ -703,9 +701,9 @@ bool Archive::verifyDataentries(bool throw_exception)
 	size_t nodes_size2 = 0;
 	while (check_loc < datasec_end) {
 
-		Nodes::DataEntry check_de;
+		Nodes::Dataentry check_de;
 		try {
-			check_de = getDataEntry(check_loc, false);
+			check_de = getDataentry(check_loc, false);
 		}
 		catch (Hpp::Exception const& e)
 		{
@@ -719,7 +717,7 @@ bool Archive::verifyDataentries(bool throw_exception)
 			++ nodes_size2;
 		}
 
-		check_loc += Nodes::DataEntry::HEADER_SIZE + check_de.size;
+		check_loc += Nodes::Dataentry::HEADER_SIZE + check_de.size;
 	}
 
 	if (nodes_size1 != nodes_size2) {
@@ -748,6 +746,85 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 				return false;
 			}
 		}
+	}
+
+	return true;
+}
+
+bool Archive::verifyReferences(bool throw_exception)
+{
+	size_t const MAX_CHECK_AMOUNT_PER_ITERATION = 500;
+
+	size_t metadata_ofs = 0;
+	while (metadata_ofs < metas_s_size + metas_us_size) {
+
+		// Pick some Nodes for reference count check
+		std::map< Hpp::ByteV, uint32_t > refs;
+		while (refs.size() < MAX_CHECK_AMOUNT_PER_ITERATION && metadata_ofs < metas_s_size + metas_us_size) {
+			Nodes::Metadata metadata = getNodeMetadata(metadata_ofs);
+			++ metadata_ofs;
+			if (!metadata.empty) {
+				refs[metadata.hash] = metadata.refs;
+			}
+		}
+
+		// Go all nodes through, and calculate how many
+		// references there are to the selected ones
+		std::map< Hpp::ByteV, uint32_t > refs_check;
+		// If there is root node, then add one reference to it
+		if (refs.find(root_ref) != refs.end()) {
+			refs_check[root_ref] = 1;
+		}
+		size_t check_loc = getSectionBegin(SECTION_DATA);
+		while (check_loc < datasec_end) {
+
+			Nodes::Dataentry check_de = getDataentry(check_loc, true, true);
+
+			if (!check_de.empty) {
+
+				// Get children of this Node
+				Nodes::Node* node = spawnNodeFromDataentry(check_de);
+				Nodes::Children children = node->getChildrenNodes();
+				delete node;
+
+				for (Nodes::Children::const_iterator children_it = children.begin();
+				     children_it != children.end();
+				     ++ children_it) {
+					Nodes::Child const& child = *children_it;
+					if (refs.find(child.hash) != refs.end()) {
+						std::map< Hpp::ByteV, uint32_t >::iterator refs_check_find = refs_check.find(child.hash);
+						if (refs_check_find != refs_check.end()) {
+							++ refs_check_find->second;
+						} else {
+							refs_check[child.hash] = 1;
+						}
+					}
+				}
+
+			}
+
+			check_loc += Nodes::Dataentry::HEADER_SIZE + check_de.size;
+		}
+
+		// Now ensure all reference counts are same.
+		for (std::map< Hpp::ByteV, uint32_t >::const_iterator refs_it = refs.begin();
+		     refs_it != refs.end();
+		     ++ refs_it) {
+			Hpp::ByteV hash = refs_it->first;
+			uint32_t r = refs_it->second;
+			std::map< Hpp::ByteV, uint32_t >::const_iterator refs_check_find = refs_check.find(hash);
+			uint32_t r_check = 0;
+			if (refs_check_find != refs_check.end()) {
+				r_check = refs_check_find->second;
+			}
+			if (r != r_check) {
+				if (throw_exception) {
+					throw Hpp::Exception("Reference count for node " + Hpp::byteVToHexV(hash) + " is claimed to be " + Hpp::sizeToStr(r) + ", but when checked, only " + Hpp::sizeToStr(r_check) + " was found referencing to it!");
+				}
+				return false;
+			}
+		}
+
 	}
 
 	return true;
@@ -1038,7 +1115,7 @@ Hpp::ByteV Archive::getNodeData(Nodes::Metadata const& metadata)
 {
 
 	// Read dataentry header
-	Nodes::DataEntry de = getDataEntry(metadata.data_loc, true, true);
+	Nodes::Dataentry de = getDataentry(metadata.data_loc, true, true);
 	return de.data;
 }
 
@@ -1051,15 +1128,15 @@ ssize_t Archive::calculateAmountOfEmptySpace(uint64_t loc)
 			return -1;
 		}
 
-		Nodes::DataEntry de = getDataEntry(loc, false);
+		Nodes::Dataentry de = getDataentry(loc, false);
 
 		if (!de.empty) {
 			break;
 		}
 // TODO: It would be good to check here, that data entries do not overflow!
 
-		empty_space += Nodes::DataEntry::HEADER_SIZE + de.size;
-		loc += Nodes::DataEntry::HEADER_SIZE + de.size;
+		empty_space += Nodes::Dataentry::HEADER_SIZE + de.size;
+		loc += Nodes::Dataentry::HEADER_SIZE + de.size;
 	}
 	return empty_space;
 }
@@ -1264,7 +1341,8 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 
 	// Write
 	io.doJournalAndWrites(writes);
-	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+
 }
 
 Writes Archive::writesPasswordVerifier(void)
@@ -1341,40 +1419,40 @@ Writes Archive::writesRootRefAndCounts(void)
 
 Writes Archive::writesData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after)
 {
-	HppAssert(begin + Nodes::DataEntry::HEADER_SIZE + data.size() + empty_space_after <= datasec_end, "Trying to write data after datasection!");
+	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + data.size() + empty_space_after <= datasec_end, "Trying to write data after datasection!");
 
 	Writes result;
-	result[begin] = Hpp::uInt32ToByteV(data.size() & Nodes::DataEntry::MASK_DATA);
+	result[begin] = Hpp::uInt32ToByteV(data.size() & Nodes::Dataentry::MASK_DATA);
 	result[begin][0] |= uint8_t(type) << 5;
-	result[begin + Nodes::DataEntry::HEADER_SIZE] = data;
+	result[begin + Nodes::Dataentry::HEADER_SIZE] = data;
 
 	if (empty_space_after > 0) {
-		HppAssert(empty_space_after >= Nodes::DataEntry::HEADER_SIZE, "Empty after data must be zero, or at least four!");
-		result[begin + Nodes::DataEntry::HEADER_SIZE + data.size()] = Hpp::uInt32ToByteV(((empty_space_after - Nodes::DataEntry::HEADER_SIZE) & Nodes::DataEntry::MASK_DATA) | Nodes::DataEntry::MASK_EMPTY);
+		HppAssert(empty_space_after >= Nodes::Dataentry::HEADER_SIZE, "Empty after data must be zero, or at least four!");
+		result[begin + Nodes::Dataentry::HEADER_SIZE + data.size()] = Hpp::uInt32ToByteV(((empty_space_after - Nodes::Dataentry::HEADER_SIZE) & Nodes::Dataentry::MASK_DATA) | Nodes::Dataentry::MASK_EMPTY);
 	}
 	return result;
 }
 
 Writes Archive::writesEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry)
 {
-	HppAssert(begin + Nodes::DataEntry::HEADER_SIZE + size, "Trying to write empty after datasection!");
+	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + size, "Trying to write empty after datasection!");
 
 	if (try_to_join_to_next_dataentry) {
 		// Check if entry after this one is empty too. If so, then merge them
-		size_t check_loc = begin + Nodes::DataEntry::HEADER_SIZE + size;
+		size_t check_loc = begin + Nodes::Dataentry::HEADER_SIZE + size;
 		while (check_loc != datasec_end) {
 			HppAssert(check_loc < datasec_end, "Empty data entry overflows data section!");
-			Nodes::DataEntry de_check = getDataEntry(check_loc, false);
+			Nodes::Dataentry de_check = getDataentry(check_loc, false);
 			if (!de_check.empty) {
 				break;
 			}
-			size += Nodes::DataEntry::HEADER_SIZE + de_check.size;
-			check_loc += Nodes::DataEntry::HEADER_SIZE + de_check.size;
+			size += Nodes::Dataentry::HEADER_SIZE + de_check.size;
+			check_loc += Nodes::Dataentry::HEADER_SIZE + de_check.size;
 		}
 	}
 
 	Writes result;
-	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::DataEntry::MASK_DATA) | Nodes::DataEntry::MASK_EMPTY);
+	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::Dataentry::MASK_DATA) | Nodes::Dataentry::MASK_EMPTY);
 	result[begin] = header;
 
 	return result;
@@ -1383,7 +1461,7 @@ Writes Archive::writesEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_n
 Writes Archive::writesClearNode(Nodes::Metadata const& metadata, size_t metadata_loc)
 {
 	// Read length of compressed data
-	Nodes::DataEntry de = getDataEntry(metadata.data_loc, false);
+	Nodes::Dataentry de = getDataentry(metadata.data_loc, false);
 	if (de.empty) {
 		throw Hpp::Exception("Unexpected empty data entry!");
 	}
@@ -1428,7 +1506,7 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 			writes += writesMetadata(empty_metadata, metas_s_size + metas_us_size - amount + reset);
 		}
 		io.doJournalAndWrites(writes);
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
 	// If there is not infinite amount of emptiness,
@@ -1437,17 +1515,17 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 
 		// Move data entries until there is enough empty data
 		uint64_t min_dataentry_loc = datasec_begin + bytes_alloc;
-		while (empty_bytes_after_datasec_begin != (ssize_t)bytes_alloc && empty_bytes_after_datasec_begin < (ssize_t)bytes_alloc + (ssize_t)Nodes::DataEntry::HEADER_SIZE) {
+		while (empty_bytes_after_datasec_begin != (ssize_t)bytes_alloc && empty_bytes_after_datasec_begin < (ssize_t)bytes_alloc + (ssize_t)Nodes::Dataentry::HEADER_SIZE) {
 			// Read length of next data entry
 			uint64_t moved_de_loc = datasec_begin + empty_bytes_after_datasec_begin;
-			Nodes::DataEntry moved_de = getDataEntry(moved_de_loc, false);
+			Nodes::Dataentry moved_de = getDataentry(moved_de_loc, false);
 			if (moved_de.empty) {
 				throw Hpp::Exception("Unexpected empty data entry!");
 			}
 
 			// Loop until space is found
 			uint64_t de_to_check_loc = moved_de_loc;
-			uint64_t de_to_check_end = de_to_check_loc + Nodes::DataEntry::HEADER_SIZE + moved_de.size;
+			uint64_t de_to_check_end = de_to_check_loc + Nodes::Dataentry::HEADER_SIZE + moved_de.size;
 			while (true) {
 
 				// Check how much there is empty
@@ -1480,7 +1558,7 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 					if (moved_de_loc == de_to_check_loc) empty_b4_dest = datasec_begin;
 					else empty_b4_dest = de_to_check_end;
 					moveData(moved_de_loc, moved_new_loc, datasec_begin, empty_b4_dest);
-					HppAssert(verifyDataentries(), "Dataentries are broken!");
+					HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
 					break;
 				}
 
@@ -1489,8 +1567,8 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 				// is not in the way of new metadatas.
 				size_t empty_data_end = de_to_check_end + empty_bytes_after_de;
 				uint64_t possible_new_loc = std::max(min_dataentry_loc, de_to_check_end);
-				uint64_t possible_new_loc_end = possible_new_loc + Nodes::DataEntry::HEADER_SIZE + moved_de.size;
-				if (possible_new_loc_end == empty_data_end || possible_new_loc_end <= empty_data_end - Nodes::DataEntry::HEADER_SIZE) {
+				uint64_t possible_new_loc_end = possible_new_loc + Nodes::Dataentry::HEADER_SIZE + moved_de.size;
+				if (possible_new_loc_end == empty_data_end || possible_new_loc_end <= empty_data_end - Nodes::Dataentry::HEADER_SIZE) {
 					// If last de was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
@@ -1504,12 +1582,12 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 				// The moved data entry did not fit to
 				// empty space here, so search behind
 				// next non-empty data entry.
-				Nodes::DataEntry de_to_check = getDataEntry(empty_data_end, false);
+				Nodes::Dataentry de_to_check = getDataentry(empty_data_end, false);
 				if (de_to_check.empty) {
 					throw Hpp::Exception("Unexpected empty data entry!");
 				}
 				de_to_check_loc = empty_data_end;
-				de_to_check_end = de_to_check_loc + Nodes::DataEntry::HEADER_SIZE + de_to_check.size;
+				de_to_check_end = de_to_check_loc + Nodes::Dataentry::HEADER_SIZE + de_to_check.size;
 
 			}
 
@@ -1536,10 +1614,10 @@ void Archive::allocateUnsortedMetadatas(size_t amount)
 			writes += writesRootRefAndCounts();
 		} else {
 			writes += writesRootRefAndCounts();
-			writes += writesEmpty(getSectionBegin(SECTION_DATA), empty_bytes_after_datasec_begin - Nodes::DataEntry::HEADER_SIZE, false);
+			writes += writesEmpty(getSectionBegin(SECTION_DATA), empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
 		}
 		io.doJournalAndWrites(writes);
-		HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
 
@@ -1597,16 +1675,16 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 			break;
 		}
 		// Read and parse header
-		Nodes::DataEntry de = getDataEntry(dataspace_seek, false);
+		Nodes::Dataentry de = getDataentry(dataspace_seek, false);
 
-		dataspace_seek += Nodes::DataEntry::HEADER_SIZE + de.size;
+		dataspace_seek += Nodes::Dataentry::HEADER_SIZE + de.size;
 
 		// If this entry is empty, then
 		// add it to amount of empty data
 		if (de.empty) {
-			dataspace_size += Nodes::DataEntry::HEADER_SIZE + de.size;
+			dataspace_size += Nodes::Dataentry::HEADER_SIZE + de.size;
 			// Check if there is now enough data
-			if (dataspace_size >= 2 * Nodes::DataEntry::HEADER_SIZE + data_compressed.size()) {
+			if (dataspace_size >= 2 * Nodes::Dataentry::HEADER_SIZE + data_compressed.size()) {
 				break;
 			}
 		}
@@ -1626,11 +1704,11 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	#endif
 	Writes writes;
 	if (dataspace_size_infinite) {
-		datasec_end = dataspace_begin + Nodes::DataEntry::HEADER_SIZE + data_compressed.size();
+		datasec_end = dataspace_begin + Nodes::Dataentry::HEADER_SIZE + data_compressed.size();
 		writes = writesData(dataspace_begin, node->getType(), data_compressed, 0);
 	} else {
 		HppAssert(dataspace_begin + dataspace_size <= datasec_end, "Overflow!");
-		writes = writesData(dataspace_begin, node->getType(), data_compressed, dataspace_size - data_compressed.size() - Nodes::DataEntry::HEADER_SIZE);
+		writes = writesData(dataspace_begin, node->getType(), data_compressed, dataspace_size - data_compressed.size() - Nodes::Dataentry::HEADER_SIZE);
 	}
 	// Prepare to write metadata of node
 	Nodes::Metadata meta;
@@ -1661,7 +1739,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	}
 	// Do writing
 	io.doJournalAndWrites(writes);
-	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
 }
@@ -1674,16 +1752,10 @@ void Archive::clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
 
 	// Get all nodes that this node refers to.
 	// Their reference count needs to be reduced.
-	Nodes::Children children;
-	if (type == Nodes::TYPE_FOLDER) {
-		Hpp::ByteV data = getNodeData(metadata);
-		Nodes::Folder folder(data);
-		children = folder.getChildrenNodes();
-	} else if (type == Nodes::TYPE_FILE) {
-		Hpp::ByteV data = getNodeData(metadata);
-		Nodes::File file(data);
-		children = file.getChildrenNodes();
-	}
+	Hpp::ByteV node_data = getNodeData(metadata);
+	Nodes::Node* node = spawnNodeFromDataAndType(node_data, type);
+	Nodes::Children children = node->getChildrenNodes();
+	delete node;
 
 	NodeInfos new_orphans;
 
@@ -1694,11 +1766,15 @@ void Archive::clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
 	     children_it != children.end();
 	     ++ children_it) {
 		Hpp::ByteV const& child_hash = children_it->hash;
+		// Get metadata
 		ssize_t child_metadata_loc;
 		HppAssert(child_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 		Nodes::Metadata child_metadata = getNodeMetadata(child_hash, &child_metadata_loc);
+		// Reduce reference count
 		HppAssert(child_metadata.refs > 0, "Trying to reduce refrence count of child node below zero!");
 		-- child_metadata.refs;
+		// If reference count reaches zero, then this
+		// is new orphan, and will be cleared soon.
 		if (child_metadata.refs == 0) {
 			NodeInfo new_orphan;
 			new_orphan.metadata = child_metadata;
@@ -1706,11 +1782,13 @@ void Archive::clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
 			new_orphan.type = children_it->type;
 			new_orphans.push_back(new_orphan);
 		}
+		// Update metadata at disk
+		writes += writesMetadata(child_metadata, child_metadata_loc);
 	}
 
 	// Do writes
 	io.doJournalAndWrites(writes);
-	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	// Clean possible new orphans too
 	for (NodeInfos::const_iterator new_orphans_it = new_orphans.begin();
@@ -1784,7 +1862,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	}
 
 	// First read source data to memory (in compressed format)
-	Nodes::DataEntry src_de = getDataEntry(src, true);
+	Nodes::Dataentry src_de = getDataentry(src, true);
 // TODO: Fix all these assertions of empty/non-empty to real error checking!
 	if (src_de.empty) {
 		throw Hpp::Exception("Trying to move empty data entry!");
@@ -1818,9 +1896,9 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	metadata.data_loc = dest;
 
 	// Calculate size of empty that source will left
-	ssize_t empty_space_at_src = calculateAmountOfEmptySpace(src + Nodes::DataEntry::HEADER_SIZE + src_de.size);
+	ssize_t empty_space_at_src = calculateAmountOfEmptySpace(src + Nodes::Dataentry::HEADER_SIZE + src_de.size);
 	if (empty_space_at_src >= 0) {
-		empty_space_at_src = src_de.size + Nodes::DataEntry::HEADER_SIZE + empty_space_at_src + (src - empty_b4_src);
+		empty_space_at_src = src_de.size + Nodes::Dataentry::HEADER_SIZE + empty_space_at_src + (src - empty_b4_src);
 	}
 
 	// Calculate sizes and position of empties that destination will left
@@ -1829,12 +1907,12 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	if (empty_b4_src != empty_b4_dest) {
 		empty_space_after_dest = calculateAmountOfEmptySpace(empty_b4_dest);
 		if (empty_space_after_dest >= 0) {
-			ssize_t reduce = (dest - empty_b4_dest) + Nodes::DataEntry::HEADER_SIZE + src_de.size;
-			HppAssert(empty_space_after_dest == reduce || empty_space_after_dest >= reduce + ssize_t(Nodes::DataEntry::HEADER_SIZE), "Invalid amount of empty!");
+			ssize_t reduce = (dest - empty_b4_dest) + Nodes::Dataentry::HEADER_SIZE + src_de.size;
+			HppAssert(empty_space_after_dest == reduce || empty_space_after_dest >= reduce + ssize_t(Nodes::Dataentry::HEADER_SIZE), "Invalid amount of empty!");
 			empty_space_after_dest -= reduce;
 		}
 	} else {
-		ssize_t empty_space_after_src = calculateAmountOfEmptySpace(src + Nodes::DataEntry::HEADER_SIZE + src_de.size);
+		ssize_t empty_space_after_src = calculateAmountOfEmptySpace(src + Nodes::Dataentry::HEADER_SIZE + src_de.size);
 		if (empty_space_after_src < 0) {
 			empty_space_after_dest = -1;
 		} else if (src > dest) {
@@ -1855,27 +1933,27 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 		if (empty_space_at_src < 0) {
 			datasec_end = empty_b4_src;
 		} else {
-			HppAssert(empty_space_at_src >= (ssize_t)Nodes::DataEntry::HEADER_SIZE, "Too little amount of empty data! Header does not fit!");
+			HppAssert(empty_space_at_src >= (ssize_t)Nodes::Dataentry::HEADER_SIZE, "Too little amount of empty data! Header does not fit!");
 			HppAssert(empty_b4_src + empty_space_at_src <= (ssize_t)datasec_end, "Overflow!");
-			writes += writesEmpty(empty_b4_src, empty_space_at_src - Nodes::DataEntry::HEADER_SIZE, true);
+			writes += writesEmpty(empty_b4_src, empty_space_at_src - Nodes::Dataentry::HEADER_SIZE, true);
 		}
 	}
 
 	// Write data and empty after it
 	if (empty_space_after_dest < 0) {
-		datasec_end = dest + Nodes::DataEntry::HEADER_SIZE + src_de.size;
+		datasec_end = dest + Nodes::Dataentry::HEADER_SIZE + src_de.size;
 		writes += writesData(dest, src_de.type, src_de.data, 0);
 		HppAssert(empty_b4_src == empty_b4_dest || empty_space_at_src >= 0, "Both empties try to write the data ending!");
 	} else {
-		HppAssert(datasec_end > dest + Nodes::DataEntry::HEADER_SIZE + src_de.data.size() + empty_space_after_dest, "There should be more empty space!");
+		HppAssert(datasec_end > dest + Nodes::Dataentry::HEADER_SIZE + src_de.data.size() + empty_space_after_dest, "There should be more empty space!");
 		writes += writesData(dest, src_de.type, src_de.data, empty_space_after_dest);
 	}
 
 	// Clear data before dest
 	if (empty_space_before_dest != 0) {
 		HppAssert(empty_b4_dest + empty_space_before_dest <= datasec_end, "Overflow!");
-		HppAssert(empty_space_before_dest >= Nodes::DataEntry::HEADER_SIZE, "Fail!");
-		writes += writesEmpty(empty_b4_dest, empty_space_before_dest - Nodes::DataEntry::HEADER_SIZE, false);
+		HppAssert(empty_space_before_dest >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
+		writes += writesEmpty(empty_b4_dest, empty_space_before_dest - Nodes::Dataentry::HEADER_SIZE, false);
 	}
 
 	// If datasection end was changed, then write it too
@@ -1888,7 +1966,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 
 	// Do writes
 	io.doJournalAndWrites(writes);
-	HppAssert(verifyDataentries(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 }
 
 void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& sources)
@@ -2044,7 +2122,7 @@ void Archive::extractRecursively(Hpp::ByteV const& hash,
 
 	Nodes::Metadata metadata = getNodeMetadata(hash);
 
-	Nodes::DataEntry de = getDataEntry(metadata.data_loc, true, true);
+	Nodes::Dataentry de = getDataentry(metadata.data_loc, true, true);
 
 	if (de.type == Nodes::TYPE_FOLDER) {
 		Nodes::Folder folder(de.data);
@@ -2105,4 +2183,33 @@ Hpp::ByteV Archive::generateCryptoKey(std::string const& password, Hpp::ByteV co
 	Hpp::ByteV result;
 	hasher.getHash(result);
 	return result;
+}
+
+Nodes::Node* Archive::spawnNodeFromDataAndType(Hpp::ByteV const& data, Nodes::Type type)
+{
+	switch (type) {
+
+	case Nodes::TYPE_DATABLOCK:
+		return new Nodes::Datablock(data);
+
+	case Nodes::TYPE_FILE:
+		return new Nodes::File(data);
+
+	case Nodes::TYPE_FOLDER:
+		return new Nodes::Folder(data);
+
+	case Nodes::TYPE_SYMLINK:
+		return new Nodes::Symlink(data);
+
+	default:
+		HppAssert(false, "Invalid type!");
+		return NULL;
+
+	}
+}
+
+Nodes::Node* Archive::spawnNodeFromDataentry(Nodes::Dataentry const& dataentry)
+{
+	HppAssert(!dataentry.empty, "Unable to spawn Node from empty Dataentry!");
+	return spawnNodeFromDataAndType(dataentry.data, dataentry.type);
 }

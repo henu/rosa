@@ -65,18 +65,20 @@ public:
 	Nodes::Metadata getUnsortedMetadata(size_t metadata_ofs);
 	inline uint64_t getDataSectionBegin(void) const { return getSectionBegin(SECTION_DATA); }
 	inline uint64_t getDataSectionEnd(void) const { return datasec_end; }
-	uint64_t getNextDataEntry(uint64_t data_entry_loc);
-	Nodes::DataEntry getDataEntry(uint64_t loc, bool read_data, bool extract_data = false);
+	uint64_t getNextDataentry(uint64_t data_entry_loc);
+	Nodes::Dataentry getDataentry(uint64_t loc, bool read_data, bool extract_data = false);
 	inline bool getJournalFlag(void) const { return io.getJournalFlag(); }
 	uint64_t getJournalLocation(void);
 	inline bool getOrphanNodesFlag(void) const { return orphan_nodes_exists; }
 	Hpp::ByteV getNodeData(Hpp::ByteV const& node_hash);
 	inline bool pathExists(Hpp::Path const& path);
 
-	// Verifier functions. Return false on
-	// error, or throw exception if requested.
-	bool verifyDataentries(bool throw_exception = false);
+	// Verifier functions. Return false on error, or throw exception if
+	// requested. Note, that exception will be thrown anyway, if other
+	// things fail than those that are tested right now.
+	bool verifyDataentriesAreValid(bool throw_exception = false);
 	bool verifyNoDoubleMetadatas(bool throw_exception = false);
+	bool verifyReferences(bool throw_exception = false);
 
 private:
 
@@ -288,6 +290,10 @@ private:
 
 	// Generates crypto key from password and salt
 	static Hpp::ByteV generateCryptoKey(std::string const& password, Hpp::ByteV const& salt);
+
+	// Factory functions from raw data
+	static Nodes::Node* spawnNodeFromDataAndType(Hpp::ByteV const& data, Nodes::Type type);
+	static Nodes::Node* spawnNodeFromDataentry(Nodes::Dataentry const& dataentry);
 
 };
 
