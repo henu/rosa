@@ -11,10 +11,27 @@
 #include <hpp/aes256ofbcipher.h>
 #include <cstring>
 
+#ifdef ENABLE_FILEIO_CACHE
+FileIO::FileIO(size_t cache_max_size) :
+#else
 FileIO::FileIO(void) :
+#endif
 data_end(0),
+#ifdef ENABLE_FILEIO_CACHE
+cache_max_size(cache_max_size),
+#endif
+cache_total_size(0),
 journal_exists(false)
 {
+}
+
+FileIO::~FileIO(void)
+{
+	for (Cache::iterator cache_it = cache.begin();
+	     cache_it != cache.end();
+	     ++ cache_it) {
+		delete cache_it->second;
+	}
 }
 
 void FileIO::closeAndOpenFile(Hpp::Path const& path)
@@ -61,9 +78,10 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 
 	// Check if part exists in cache
 	#ifdef ENABLE_FILEIO_CACHE
-	Cache::const_iterator cache_find = cache.find(offset);
-	if (cache_find != cache.end() && cache_find->second.size() == size) {
-		return cache_find->second;
+	Cache::iterator cache_find = cache.find(offset);
+	if (cache_find != cache.end() && cache_find->second->data.size() == size) {
+		moveToFrontInCache(cache_find);
+		return cache_find->second->data;
 	}
 	#endif
 
@@ -259,6 +277,10 @@ Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 #ifdef ENABLE_FILEIO_CACHE
 void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 {
+	if (chunk.size() >= cache_max_size / 2) {
+		return;
+	}
+
 	uint64_t end = offset + chunk.size();
 	Cache::iterator cache_find;
 	// Clear overlapping chunks. Start from
@@ -267,18 +289,52 @@ void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 		if (cache_find->first >= end) {
 			break;
 		}
+		delete cache_find->second;
+		cache_priors.erase(cache_find->second->prior_it);
 		cache.erase(cache_find);
 	}
 	// Then clear those that begin before this new one
 	while ((cache_find = cache.lower_bound(offset)) != cache.begin()) {
 		-- cache_find;
-		if (cache_find->first + cache_find->second.size() <= offset) {
+		if (cache_find->first + cache_find->second->data.size() <= offset) {
 			break;
 		}
+		delete cache_find->second;
+		cache_priors.erase(cache_find->second->prior_it);
 		cache.erase(cache_find);
 	}
 
 	// Store
-	cache[offset] = chunk;
+	Cacheitem* new_citem = new Cacheitem;
+	try {
+		new_citem->data = chunk;
+		std::pair< Cache::iterator, bool > insert_result = cache.insert(Cache::value_type(offset, new_citem));
+		HppAssert(insert_result.second, "There was already a value there!");
+		cache_priors.push_front(insert_result.first);
+		new_citem->prior_it = cache_priors.begin();
+	}
+	catch ( ... ) {
+		delete new_citem;
+		throw;
+	}
+
+	cache_total_size += chunk.size();
+
+	// If cache has grown too big, then remove oldest elements from it
+	while (cache_total_size > cache_max_size) {
+		Cache::iterator oldest = cache_priors.back();
+		cache_total_size -= oldest->second->data.size();
+		delete oldest->second;
+		cache.erase(oldest);
+		cache_priors.pop_back();
+	}
 }
+
+void FileIO::moveToFrontInCache(Cache::iterator& cache_find)
+{
+	cache_priors.erase(cache_find->second->prior_it);
+	cache_priors.push_front(cache_find);
+	cache_find->second->prior_it = cache_priors.begin();
+}
+
 #endif

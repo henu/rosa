@@ -6,13 +6,20 @@
 #include <hpp/path.h>
 #include <hpp/bytev.h>
 #include <fstream>
+#include <map>
+#include <list>
 
 class FileIO
 {
 
 public:
 
+	#ifdef ENABLE_FILEIO_CACHE
+	FileIO(size_t cache_max_size);
+	#else
 	FileIO(void);
+	#endif
+	~FileIO(void);
 
 	// Opens file and closes old one if its open. Also resets everything.
 	void closeAndOpenFile(Hpp::Path const& path);
@@ -54,9 +61,14 @@ public:
 
 private:
 
-	#ifdef ENABLE_FILEIO_CACHE
-	typedef std::map< uint64_t, Hpp::ByteV > Cache;
-	#endif
+	struct Cacheitem;
+	typedef std::map< uint64_t, Cacheitem* > Cache;
+	typedef std::list< Cache::iterator > Cachepriorities;
+	struct Cacheitem
+	{
+		Hpp::ByteV data;
+		Cachepriorities::iterator prior_it;
+	};
 
 	std::fstream file;
 
@@ -67,9 +79,10 @@ private:
 	// for it and it MUST be updated by the user!
 	uint64_t data_end;
 
-	#ifdef ENABLE_FILEIO_CACHE
 	Cache cache;
-	#endif
+	Cachepriorities cache_priors;
+	size_t cache_max_size;
+	size_t cache_total_size;
 
 	// Is there journal or orphan nodes
 	bool journal_exists;
@@ -89,6 +102,12 @@ private:
 	// that is even partly overlapping this new data.
 	#ifdef ENABLE_FILEIO_CACHE
 	void storeToCache(uint64_t offset, Hpp::ByteV const& chunk);
+	#endif
+
+	// Moves specific chunk to the front, so it will be the last
+	// one that will be removed in case cache becomes full.
+	#ifdef ENABLE_FILEIO_CACHE
+	void moveToFrontInCache(Cache::iterator& cache_find);
 	#endif
 
 };

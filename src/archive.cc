@@ -20,6 +20,9 @@
 
 Archive::Archive(Useroptions const& useroptions) :
 useroptions(useroptions),
+#ifdef ENABLE_FILEIO_CACHE
+io(useroptions.cache_size),
+#endif
 metas_s_size(0),
 metas_us_size(0),
 datasec_end(0),
