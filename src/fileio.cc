@@ -289,6 +289,7 @@ void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 		if (cache_find->first >= end) {
 			break;
 		}
+		cache_total_size -= cache_find->second->data.size();
 		delete cache_find->second;
 		cache_priors.erase(cache_find->second->prior_it);
 		cache.erase(cache_find);
@@ -299,6 +300,7 @@ void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 		if (cache_find->first + cache_find->second->data.size() <= offset) {
 			break;
 		}
+		cache_total_size -= cache_find->second->data.size();
 		delete cache_find->second;
 		cache_priors.erase(cache_find->second->prior_it);
 		cache.erase(cache_find);
