@@ -290,8 +290,8 @@ void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 			break;
 		}
 		cache_total_size -= cache_find->second->data.size();
-		delete cache_find->second;
 		cache_priors.erase(cache_find->second->prior_it);
+		delete cache_find->second;
 		cache.erase(cache_find);
 	}
 	// Then clear those that begin before this new one
@@ -301,8 +301,8 @@ void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
 			break;
 		}
 		cache_total_size -= cache_find->second->data.size();
-		delete cache_find->second;
 		cache_priors.erase(cache_find->second->prior_it);
+		delete cache_find->second;
 		cache.erase(cache_find);
 	}
 
