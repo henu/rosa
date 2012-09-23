@@ -70,7 +70,7 @@ void FileIO::enableCrypto(Hpp::ByteV const& crypto_key)
 void FileIO::initAndWriteJournalFlagToFalse(void)
 {
 	HppAssert(!journal_exists, "Journal must not exist now!");
-	writesJournalFlag(getJournalFlagLocation(), false);
+	writeJournalflag(false);
 }
 
 void FileIO::readJournalflagState(void)
@@ -260,87 +260,6 @@ void FileIO::flushWrites(bool use_journal)
 	}
 	#endif
 	writecache.clear();
-}
-
-void FileIO::doWrites(Writes const& writes, bool do_not_crypt)
-{
-	#ifdef ENABLE_PROFILER
-	Hpp::Profiler prof("FileIO::doWrites");
-	#endif
-
-	// Ensure writes do not overlap
-	#ifndef NDEBUG
-	size_t last_end = 0;
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		// Get specs
-		uint64_t begin = writes_it->first;
-		uint64_t end = begin + writes_it->second.size();
-		HppAssert(begin >= last_end, "Unable to do writes, because there are some that overlap!");
-		last_end = end;
-	}
-	#endif
-	// Do writes
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		// Get specs
-		uint64_t offset = writes_it->first;
-		Hpp::ByteV const& data = writes_it->second;
-
-		ensureArchiveSize(offset);
-
-		// Write
-		file.seekp(offset, std::ios_base::beg);
-		if (crypto_key.empty() || do_not_crypt) {
-			file.write((char const*)&data[0], data.size());
-		} else {
-			Hpp::ByteV data_crypted;
-			Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
-			cipher.encrypt(data);
-			cipher.readEncrypted(data_crypted, true);
-			file.write((char const*)&data_crypted[0], data_crypted.size());
-		}
-
-		#ifdef ENABLE_FILEIO_CACHE
-		storeToReadcache(offset, data);
-		#endif
-	}
-}
-
-void FileIO::doJournalAndWrites(Writes const& writes)
-{
-
-	// First ensure there is no journal already
-	if (journal_exists) {
-		throw Hpp::Exception("There is already journal!");
-	}
-
-	// Ensure none of writes go over end of data
-	#ifndef NDEBUG
-	for (Writes::const_iterator writes_it = writes.begin();
-	     writes_it != writes.end();
-	     ++ writes_it) {
-		uint64_t offset = writes_it->first;
-		Hpp::ByteV const& data = writes_it->second;
-		HppAssert(offset + data.size() <= data_end, "One of writes overflow beyond data area!");
-	}
-	#endif
-
-	// Write journal to disk
-	doWrites(writesJournal(getJournalInfoLocation(), data_end, writes));
-	file.flush();
-
-	// Write journal flag to disk
-	doWrites(writesJournalFlag(getJournalFlagLocation(), true));
-	file.flush();
-
-	// Now do writes
-	doWrites(writes);
-
-	// Finally clear journal flag
-	clearJournalFlag();
 }
 
 bool FileIO::finishPossibleInterruptedJournal(void)

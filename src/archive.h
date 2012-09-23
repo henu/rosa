@@ -7,7 +7,6 @@
 #include "nodes/folder.h"
 #include "nodes/metadata.h"
 #include "useroptions.h"
-#include "writes.h"
 #include "types.h"
 #include "fileio.h"
 
@@ -158,6 +157,7 @@ private:
 	// Returns Metadata of specific node. Throws Hpp::Exception
 	// if node does not exist. If loc is given, then return
 	// value of getMetadataLocation is stored there
+// TODO: Change type of loc to uint64_t!
 	Nodes::Metadata getNodeMetadata(Hpp::ByteV const& node_hash, ssize_t* loc = NULL);
 	Nodes::Metadata getNodeMetadata(uint64_t metadata_loc);
 
@@ -208,24 +208,22 @@ private:
 
 
 	// ----------------------------------------
-	// Functions to form different Writes
+	// Functions to do different writes
 	// ----------------------------------------
 
-	Writes writesPasswordVerifier(void);
+	void writePasswordVerifier(void);
 
-	Writes writesOrphanNodesFlag(bool orphans_exists);
+	void writeOrphanNodesFlag(bool orphans_exists);
 
 	// Sets reference count of specific node
-	Writes writesSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs);
+	void writeSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs);
 
 	// Writes metadata to specific location. Location
 	// is relative to begin of unsorted metadatas and
 	// is measured in multiples of metadata entries.
-	Writes writesMetadata(Nodes::Metadata const& meta, size_t metadata_loc);
 	void writeMetadata(Nodes::Metadata const& meta, size_t metadata_loc);
 
 	// Writes root reference, number of nodes and end of data section.
-	Writes writesRootRefAndCounts(void);
 	void writeRootRefAndCounts(void);
 
 	// Empty space in bytes, after this data entry and its header has been
@@ -234,17 +232,15 @@ private:
 	// case, if next data entry is already there and starts right after
 	// this, or if this is the last data entry. begin is in absolute form.
 	// Data must be already compressed.
-	Writes writesData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after);
+	void writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after);
 
 	// Writes header + size bytes. You must set try_to_join_to_next_dataentry
 	// to false, if there is no real data entry after this, becuase otherwise
 	// it gets corrupted data.
-	Writes writesEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
 	void writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
 
 	// Clears specific node. Marks it as empty
 	// to data section and to metadata section.
-	Writes writesClearNode(Nodes::Metadata const& metadata, size_t metadata_loc);
 	void writeClearNode(Nodes::Metadata const& metadata, size_t metadata_loc);
 
 

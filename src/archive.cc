@@ -45,29 +45,22 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 {
 	closeAndOpenFile(path);
 
-	// Initialize empty archive
-	Writes writes;
-
 	// Identifier
 	size_t const IDENTIFIER_LEN = strlen(ARCHIVE_IDENTIFIER);
-	writes[0] = Hpp::ByteV(ARCHIVE_IDENTIFIER, ARCHIVE_IDENTIFIER + IDENTIFIER_LEN);
+	io.writeChunk(0, Hpp::ByteV(ARCHIVE_IDENTIFIER, ARCHIVE_IDENTIFIER + IDENTIFIER_LEN), false);
 
 	// Version
-	writes[IDENTIFIER_LEN] = Hpp::ByteV(1, 0);
+	io.writeChunk(IDENTIFIER_LEN, Hpp::ByteV(1, 0), false);
 
 	// Crypto flag and possible salt
 	Hpp::ByteV salt;
 	if (password.empty()) {
-		writes[IDENTIFIER_LEN + 1] = Hpp::ByteV(1, 0);
+		io.writeChunk(IDENTIFIER_LEN + 1, Hpp::ByteV(1, 0), false);
 	} else {
-		writes[IDENTIFIER_LEN + 1] = Hpp::ByteV(1, 1);
+		io.writeChunk(IDENTIFIER_LEN + 1, Hpp::ByteV(1, 1), false);
 		salt = Hpp::randomSecureData(SALT_SIZE);
-		writes[IDENTIFIER_LEN + 2] = salt;
+		io.writeChunk(IDENTIFIER_LEN + 2, salt, false);
 	}
-
-	// This is the end of part that is always
-	// written as plain text, so do writes now.
-	io.doWrites(writes, true);
 
 	// If password is used, then generate crypto key and password verifier
 	if (!password.empty()) {
@@ -78,13 +71,12 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 
 		// Create new password verifier and write it to the disk.
 		crypto_password_verifier = Hpp::randomSecureData(PASSWORD_VERIFIER_SIZE / 2);
-		io.doWrites(writesPasswordVerifier());
-
+		writePasswordVerifier();
 	}
 
 	io.initAndWriteJournalFlagToFalse();
 
-	io.doWrites(writesJournal(getSectionBegin(SECTION_JOURNAL_INFO), Hpp::randomNBitInt(64), Writes()));
+	io.writeChunk(getSectionBegin(SECTION_JOURNAL_INFO), Hpp::uInt64ToByteV(Hpp::randomNBitInt(64)));
 
 	setOrphanNodesFlag(true);
 
@@ -98,19 +90,19 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	// Inform FileIO about new data end
 	io.setEndOfData(datasec_end);
 
-	io.doWrites(writesRootRefAndCounts());
+	writeRootRefAndCounts();
 
 	// Spawn empty Folder node to serve as root node
 	Nodes::Folder folder;
 	spawnOrGetNode(&folder);
 	root_ref = folder.getHash();
-	io.doWrites(writesSetNodeRefs(root_ref, 1));
-	io.doWrites(writesRootRefAndCounts());
+	writeSetNodeRefs(root_ref, 1);
+	writeRootRefAndCounts();
 
 	setOrphanNodesFlag(false);
 
-	// Write to disk
-	io.flush();
+	// Flush writes, no journal is needed here at the beginning
+	io.flushWrites(false);
 
 	HppAssert(verifyReferences(), "Reference counts have failed!");
 }
@@ -330,9 +322,6 @@ void Archive::remove(Paths const& paths)
 	}
 
 	setOrphanNodesFlag(orphan_nodes_flag_before);
-
-	// Write to disk
-	io.flush();
 }
 
 void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
@@ -401,9 +390,6 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 	}
 
 	setOrphanNodesFlag(orphan_nodes_flag_before);
-
-	// Write to disk
-	io.flush();
 }
 
 void Archive::finishPossibleInterruptedJournal(void)
@@ -1136,18 +1122,17 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	root_ref = new_root;
 
 	// Prepare writes
-	Writes writes;
-	writes += writesRootRefAndCounts();
-	writes += writesMetadata(metadata_old, metadata_old_loc);
-	writes += writesMetadata(metadata_new, metadata_new_loc);
+	writeRootRefAndCounts();
+	writeMetadata(metadata_old, metadata_old_loc);
+	writeMetadata(metadata_new, metadata_new_loc);
 
 	// Write
-	io.doJournalAndWrites(writes);
+	io.flushWrites(true);
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 }
 
-Writes Archive::writesPasswordVerifier(void)
+void Archive::writePasswordVerifier(void)
 {
 	if (crypto_key.empty()) {
 		throw Hpp::Exception("Writing password verifier requires cryptokey set!");
@@ -1158,12 +1143,10 @@ Writes Archive::writesPasswordVerifier(void)
 	part += crypto_password_verifier;
 	part += crypto_password_verifier;
 
-	Writes result;
-	result[getSectionBegin(SECTION_PASSWORD_VERIFIER)] = part;
-	return result;
+	io.writeChunk(getSectionBegin(SECTION_PASSWORD_VERIFIER), part);
 }
 
-Writes Archive::writesOrphanNodesFlag(bool orphans_exists)
+void Archive::writeOrphanNodesFlag(bool orphans_exists)
 {
 	Hpp::ByteV flag_serialized;
 	if (orphans_exists) {
@@ -1172,33 +1155,16 @@ Writes Archive::writesOrphanNodesFlag(bool orphans_exists)
 		flag_serialized.push_back(Hpp::randomInt(0, 127));
 	}
 
-	Writes result;
-	result[getSectionBegin(SECTION_ORPHAN_NODES_FLAG)] = flag_serialized;
-	return result;
+	io.writeChunk(getSectionBegin(SECTION_ORPHAN_NODES_FLAG), flag_serialized);
 }
 
-Writes Archive::writesSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs)
+void Archive::writeSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs)
 {
 	HppAssert(hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
-	ssize_t metadata_loc = getNodeMetadataLocation(hash);
-	if (metadata_loc < 0) {
-		throw Hpp::Exception("Node " + Hpp::byteVToHexV(hash) + " not found!");
-	}
-	size_t metadata_loc_abs = getSectionBegin(SECTION_METADATA) + metadata_loc * Nodes::Metadata::ENTRY_SIZE;
-	Nodes::Metadata meta(io.readPart(metadata_loc_abs, Nodes::Metadata::ENTRY_SIZE));
+	ssize_t metadata_loc;
+	Nodes::Metadata meta = getNodeMetadata(hash, &metadata_loc);
 	meta.refs = refs;
-	return writesMetadata(meta, metadata_loc);
-}
-
-Writes Archive::writesMetadata(Nodes::Metadata const& meta, size_t metadata_loc)
-{
-	HppAssert(metadata_loc < nodes_size, "Metadata offset too big!");
-	size_t begin = getSectionBegin(SECTION_METADATA);
-	Writes result;
-	result[begin + metadata_loc * Nodes::Metadata::ENTRY_SIZE] = meta.serialize();
-
-	HppAssert(result.begin()->first + result.begin()->second.size() <= getSectionBegin(SECTION_DATA), "Fail!");
-	return result;
+	writeMetadata(meta, metadata_loc);
 }
 
 void Archive::writeMetadata(Nodes::Metadata const& meta, size_t metadata_loc)
@@ -1209,24 +1175,6 @@ void Archive::writeMetadata(Nodes::Metadata const& meta, size_t metadata_loc)
 	HppAssert(metadata_loc < nodes_size, "Metadata offset too big!");
 	size_t begin = getSectionBegin(SECTION_METADATA);
 	io.writeChunk(begin + metadata_loc * Nodes::Metadata::ENTRY_SIZE, meta.serialize());
-}
-
-Writes Archive::writesRootRefAndCounts(void)
-{
-	HppAssert(root_ref.size() == NODE_HASH_SIZE, "Root reference has invalid size!");
-
-	Hpp::ByteV part1;
-	part1.reserve(ROOT_REF_AND_SIZES_SIZE);
-	part1 += root_ref;
-	part1 += Hpp::uInt64ToByteV(nodes_size);
-	part1 += Hpp::uInt64ToByteV(searchtree_begin);
-	part1 += Hpp::uInt64ToByteV(datasec_end);
-
-	HppAssert(part1.size() + getSectionBegin(SECTION_ROOT_REF_AND_SIZES) == getSectionBegin(SECTION_METADATA), "Fail!");
-	Writes result;
-	result[getSectionBegin(SECTION_ROOT_REF_AND_SIZES)] = part1;
-
-	return result;
 }
 
 void Archive::writeRootRefAndCounts(void)
@@ -1244,45 +1192,19 @@ void Archive::writeRootRefAndCounts(void)
 	io.writeChunk(getSectionBegin(SECTION_ROOT_REF_AND_SIZES), data);
 }
 
-Writes Archive::writesData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after)
+void Archive::writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after)
 {
 	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + data.size() + empty_space_after <= datasec_end, "Trying to write data after datasection!");
 
-	Writes result;
-	result[begin] = Hpp::uInt32ToByteV(data.size() & Nodes::Dataentry::MASK_DATA);
-	result[begin][0] |= uint8_t(type) << 5;
-	result[begin + Nodes::Dataentry::HEADER_SIZE] = data;
+	Hpp::ByteV size_chunk = Hpp::uInt32ToByteV(data.size() & Nodes::Dataentry::MASK_DATASIZE);
+	size_chunk[0] |= uint8_t(type) << 5;
+	io.writeChunk(begin, size_chunk);
+	io.writeChunk(begin + Nodes::Dataentry::HEADER_SIZE, data);
 
 	if (empty_space_after > 0) {
 		HppAssert(empty_space_after >= Nodes::Dataentry::HEADER_SIZE, "Empty after data must be zero, or at least four!");
-		result[begin + Nodes::Dataentry::HEADER_SIZE + data.size()] = Hpp::uInt32ToByteV(((empty_space_after - Nodes::Dataentry::HEADER_SIZE) & Nodes::Dataentry::MASK_DATA) | Nodes::Dataentry::MASK_EMPTY);
+		io.writeChunk(begin + Nodes::Dataentry::HEADER_SIZE + data.size(), Hpp::uInt32ToByteV(((empty_space_after - Nodes::Dataentry::HEADER_SIZE) & Nodes::Dataentry::MASK_DATASIZE) | Nodes::Dataentry::MASK_EMPTY));
 	}
-	return result;
-}
-
-Writes Archive::writesEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry)
-{
-	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + size, "Trying to write empty after datasection!");
-
-	if (try_to_join_to_next_dataentry) {
-		// Check if entry after this one is empty too. If so, then merge them
-		size_t check_loc = begin + Nodes::Dataentry::HEADER_SIZE + size;
-		while (check_loc != datasec_end) {
-			HppAssert(check_loc < datasec_end, "Empty data entry overflows data section!");
-			Nodes::Dataentry de_check = getDataentry(check_loc, false);
-			if (!de_check.empty) {
-				break;
-			}
-			size += Nodes::Dataentry::HEADER_SIZE + de_check.size;
-			check_loc += Nodes::Dataentry::HEADER_SIZE + de_check.size;
-		}
-	}
-
-	Writes result;
-	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::Dataentry::MASK_DATA) | Nodes::Dataentry::MASK_EMPTY);
-	result[begin] = header;
-
-	return result;
 }
 
 void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry)
@@ -1303,175 +1225,8 @@ void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next
 		}
 	}
 
-	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::Dataentry::MASK_DATA) | Nodes::Dataentry::MASK_EMPTY);
+	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::Dataentry::MASK_DATASIZE) | Nodes::Dataentry::MASK_EMPTY);
 	io.writeChunk(begin, header);
-}
-
-Writes Archive::writesClearNode(Nodes::Metadata const& metadata, size_t metadata_loc)
-{
-	// Read length of compressed data
-	Nodes::Dataentry de = getDataentry(metadata.data_loc, false);
-	if (de.empty) {
-		throw Hpp::Exception("Unexpected empty data entry!");
-	}
-
-	Writes result;
-	// Clear data entry
-	result += writesEmpty(metadata.data_loc, de.size, true);
-
-	// Remove metadata from the searchtree
-	std::map< uint64_t, Nodes::Metadata > metadatas_to_mod;
-
-	uint64_t parent_loc = metadata.parent;
-	uint64_t child_small_loc = metadata.child_small;
-	uint64_t child_big_loc = metadata.child_big;
-
-	// Pick one of childs to replace this Node in searchtree.
-	// 0 = No child found, 1 = smaller child, 2 = bigger child.
-	uint64_t child_selected_loc;
-	uint64_t child_not_selected_loc;
-	if (child_small_loc == Nodes::Metadata::NULL_REF) {
-		if (child_big_loc == Nodes::Metadata::NULL_REF) {
-			child_selected_loc = Nodes::Metadata::NULL_REF;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		} else {
-			child_selected_loc = child_big_loc;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		}
-	} else {
-		if (child_big_loc == Nodes::Metadata::NULL_REF) {
-			child_selected_loc = child_small_loc;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		} else if (rand() % 2 == 0) {
-			child_selected_loc = child_small_loc;
-			child_not_selected_loc = child_big_loc;
-		} else {
-			child_selected_loc = child_big_loc;
-			child_not_selected_loc = child_small_loc;
-		}
-	}
-	// Update reference from parent to possible replacing child.
-	if (parent_loc != Nodes::Metadata::NULL_REF) {
-		Nodes::Metadata parent = getNodeMetadata(parent_loc);
-		if (parent.child_small == metadata_loc) {
-			parent.child_small = child_selected_loc;
-		} else {
-			if (parent.child_big != metadata_loc) {
-				throw Hpp::Exception("Unable to clear node because reference to it could not be found from its parent in the searchtree!");
-			}
-			parent.child_big = child_selected_loc;
-		}
-		HppAssert(metadatas_to_mod.find(parent_loc) == metadatas_to_mod.end(), "Metadata already marked as modified!");
-		metadatas_to_mod[parent_loc] = parent;
-	}
-	// Update possible replacing child
-	Nodes::Metadata child_selected;
-	if (child_selected_loc != Nodes::Metadata::NULL_REF) {
-		child_selected = getNodeMetadata(child_selected_loc);
-		if (child_selected.parent != metadata_loc) {
-			throw Hpp::Exception("Unable to clear node because its child does not have the node as its parent in the searchtree!");
-		}
-		child_selected.parent = parent_loc;
-		HppAssert(metadatas_to_mod.find(child_selected_loc) == metadatas_to_mod.end(), "Metadata already marked as modified!");
-		metadatas_to_mod[child_selected_loc] = child_selected;
-
-		// Update the possible child that was not selected for replacement
-		if (child_not_selected_loc != Nodes::Metadata::NULL_REF) {
-			// Find proper location for the unselect child. It
-			// will be a child or grand child of selected child.
-			Nodes::Metadata child_not_selected = getNodeMetadata(child_not_selected_loc);
-			Nodes::Metadata new_parent;
-			uint64_t new_parent_loc;
-			uint8_t find_type = findMetadataFromSearchtree(&new_parent, &new_parent_loc, child_not_selected.hash, child_selected_loc);
-			HppAssert(find_type != 0, "Child already found!");
-			// Update this new parent. This new parent may
-			// be selected child, which should already have
-			// modifications. In this case, read it from the
-			// container of modified metadata entries.
-			std::map< uint64_t, Nodes::Metadata >::iterator metadatas_to_mod_find = metadatas_to_mod.find(new_parent_loc);
-			if (metadatas_to_mod_find != metadatas_to_mod.end()) {
-				HppAssert(new_parent_loc == child_selected_loc, "Expected selected child, but found some other!");
-				new_parent = metadatas_to_mod_find->second;
-			}
-			if (find_type == 1) {
-				HppAssert(new_parent.child_small == Nodes::Metadata::NULL_REF, "There is already a child!");
-				new_parent.child_small = child_not_selected_loc;
-			} else {
-				HppAssert(new_parent.child_big == Nodes::Metadata::NULL_REF, "There is already a child!");
-				new_parent.child_big = child_not_selected_loc;
-			}
-			metadatas_to_mod[new_parent_loc] = new_parent;
-			// Update also the non-selected child
-			if (child_not_selected.parent != metadata_loc) {
-				throw Hpp::Exception("Unable to clear node because its child does not have the node as its parent in the searchtree!");
-			}
-			child_not_selected.parent = new_parent_loc;
-			HppAssert(metadatas_to_mod.find(child_not_selected_loc) == metadatas_to_mod.end(), "Metadata already marked as modified!");
-			metadatas_to_mod[child_not_selected_loc] = child_not_selected;
-		}
-	}
-
-	// If this was not last metadata, then the
-	// last one needs to be moved over this one
-	if (metadata_loc != nodes_size - 1) {
-		uint64_t moved_loc = nodes_size - 1;
-		// First read movable metadata and its parent and children
-		// to the container of modified metadatas. This makes its
-		// easier to handle all special cases.
-		if (metadatas_to_mod.find(moved_loc) == metadatas_to_mod.end()) {
-			metadatas_to_mod[moved_loc] = getNodeMetadata(moved_loc);
-		}
-// TODO: Would it be possible to use reference here?
-		Nodes::Metadata moved = metadatas_to_mod[moved_loc];
-		if (moved.parent != Nodes::Metadata::NULL_REF && metadatas_to_mod.find(moved.parent) == metadatas_to_mod.end()) {
-			metadatas_to_mod[moved.parent] = getNodeMetadata(moved.parent);
-		}
-		if (moved.child_small != Nodes::Metadata::NULL_REF && metadatas_to_mod.find(moved.child_small) == metadatas_to_mod.end()) {
-			metadatas_to_mod[moved.child_small] = getNodeMetadata(moved.child_small);
-		}
-		if (moved.child_big != Nodes::Metadata::NULL_REF && metadatas_to_mod.find(moved.child_big) == metadatas_to_mod.end()) {
-			metadatas_to_mod[moved.child_big] = getNodeMetadata(moved.child_big);
-		}
-
-		// Update moved metadata
-		metadatas_to_mod.erase(moved_loc);
-		HppAssert(metadatas_to_mod.find(metadata_loc) == metadatas_to_mod.end(), "Metadata slot is not free!");
-		metadatas_to_mod[metadata_loc] = moved;
-		// Update possible parent
-		if (moved.parent != Nodes::Metadata::NULL_REF) {
-			Nodes::Metadata& parent2 = metadatas_to_mod[moved.parent];
-			if (parent2.child_small == moved_loc) {
-				parent2.child_small = metadata_loc;
-			} else if (parent2.child_big == moved_loc) {
-				parent2.child_big = metadata_loc;
-			} else {
-				throw Hpp::Exception("Parent/child relations mismatch!");
-			}
-		}
-		// Update possible children
-		if (moved.child_small != Nodes::Metadata::NULL_REF) {
-			metadatas_to_mod[moved.child_small].parent = metadata_loc;
-		}
-		if (moved.child_big != Nodes::Metadata::NULL_REF) {
-			metadatas_to_mod[moved.child_big].parent = metadata_loc;
-		}
-
-	}
-
-	// Write metadatas
-	for (std::map< uint64_t, Nodes::Metadata >::const_iterator metadatas_to_mod_it = metadatas_to_mod.begin();
-	     metadatas_to_mod_it != metadatas_to_mod.begin();
-	     ++ metadatas_to_mod_it) {
-		result += writesMetadata(metadatas_to_mod_it->second, metadatas_to_mod_it->first);
-	}
-
-	// Reduce the size of metadatas by one
-	-- nodes_size;
-	result += writesRootRefAndCounts();
-	HppAssert(Nodes::Metadata::ENTRY_SIZE >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
-	result += writesEmpty(getSectionBegin(SECTION_DATA), Nodes::Metadata::ENTRY_SIZE - Nodes::Dataentry::HEADER_SIZE, false);
-
-	return result;
 }
 
 void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_loc)
@@ -1647,10 +1402,9 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		// Inform FileIO about new data end
 		io.setEndOfData(datasec_end);
 
-		Writes writes;
-		writes += writesRootRefAndCounts();
-		writes += writesEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
-		io.doJournalAndWrites(writes);
+		writeRootRefAndCounts();
+		writeEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
+		io.flushWrites(true);
 		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
@@ -1749,12 +1503,11 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		empty_bytes_after_datasec_begin -= bytes;
 
 		// Write new empty data entries
-		Writes writes;
-		writes += writesEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
+		writeEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
 		if (empty_bytes_after_datasec_begin > 0) {
-			writes += writesEmpty(datasec_begin + bytes, empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
+			writeEmpty(datasec_begin + bytes, empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
 		}
-		io.doJournalAndWrites(writes);
+		io.flushWrites(true);
 		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
@@ -1856,13 +1609,12 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	#ifdef ENABLE_PROFILER
 	prof.changeTask("Archive::spawnOrGetNode / Write");
 	#endif
-	Writes writes;
 	if (dataspace_size_infinite) {
 		datasec_end = dataspace_begin + Nodes::Dataentry::HEADER_SIZE + data_compressed.size();
-		writes = writesData(dataspace_begin, node->getType(), data_compressed, 0);
+		writeData(dataspace_begin, node->getType(), data_compressed, 0);
 	} else {
 		HppAssert(dataspace_begin + dataspace_size <= datasec_end, "Overflow!");
-		writes = writesData(dataspace_begin, node->getType(), data_compressed, dataspace_size - data_compressed.size() - Nodes::Dataentry::HEADER_SIZE);
+		writeData(dataspace_begin, node->getType(), data_compressed, dataspace_size - data_compressed.size() - Nodes::Dataentry::HEADER_SIZE);
 	}
 	// Prepare to write metadata of node
 	uint64_t new_metadata_loc = nodes_size - 1;
@@ -1872,7 +1624,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	meta.parent = parent_loc;
 	meta.data_loc = dataspace_begin;
 	meta.data_size_uncompressed = data.size();
-	writes += writesMetadata(meta, new_metadata_loc);
+	writeMetadata(meta, new_metadata_loc);
 
 	// Prepare to increase refrence counts of all direct children
 	Nodes::Children children = node->getChildrenNodes();
@@ -1887,7 +1639,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 			++ parent.refs;
 		} else {
 			++ child_metadata.refs;
-			writes += writesMetadata(child_metadata, child_metadata_loc);
+			writeMetadata(child_metadata, child_metadata_loc);
 		}
 	}
 
@@ -1900,7 +1652,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 			HppAssert(parent.child_big == Nodes::Metadata::NULL_REF, "There is already a child!");
 			parent.child_big = new_metadata_loc;
 		}
-		writes += writesMetadata(parent, parent_loc);
+		writeMetadata(parent, parent_loc);
 	}
 
 	// Prepare to update end of data section
@@ -1908,10 +1660,10 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 		// Inform FileIO about new data end
 		io.setEndOfData(datasec_end);
 
-		writes += writesRootRefAndCounts();
+		writeRootRefAndCounts();
 	}
 	// Do writing
-	io.doJournalAndWrites(writes);
+	io.flushWrites(true);
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
@@ -1989,9 +1741,8 @@ void Archive::setOrphanNodesFlag(bool flag)
 	if (flag == orphan_nodes_exists) {
 		return;
 	}
-	Writes writes = writesOrphanNodesFlag(flag);
-	io.doWrites(writes);
-	io.flush();
+	writeOrphanNodesFlag(flag);
+	io.flushWrites(false);
 	orphan_nodes_exists = flag;
 }
 
@@ -2103,11 +1854,8 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 		}
 	}
 
-	// Prepare to write changes to disk.
-	Writes writes;
-
 	// Prepare metadata update
-	writes += writesMetadata(metadata, metadata_loc);
+	writeMetadata(metadata, metadata_loc);
 
 	// Prepare clearing of src. Do not perform this, if src empty is same as dest empty
 	if (empty_b4_src != empty_b4_dest) {
@@ -2116,25 +1864,25 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 		} else {
 			HppAssert(empty_space_at_src >= (ssize_t)Nodes::Dataentry::HEADER_SIZE, "Too little amount of empty data! Header does not fit!");
 			HppAssert(empty_b4_src + empty_space_at_src <= (ssize_t)datasec_end, "Overflow!");
-			writes += writesEmpty(empty_b4_src, empty_space_at_src - Nodes::Dataentry::HEADER_SIZE, true);
+			writeEmpty(empty_b4_src, empty_space_at_src - Nodes::Dataentry::HEADER_SIZE, true);
 		}
 	}
 
 	// Write data and empty after it
 	if (empty_space_after_dest < 0) {
 		datasec_end = dest + Nodes::Dataentry::HEADER_SIZE + src_de.size;
-		writes += writesData(dest, src_de.type, src_de.data, 0);
+		writeData(dest, src_de.type, src_de.data, 0);
 		HppAssert(empty_b4_src == empty_b4_dest || empty_space_at_src >= 0, "Both empties try to write the data ending!");
 	} else {
 		HppAssert(datasec_end > dest + Nodes::Dataentry::HEADER_SIZE + src_de.data.size() + empty_space_after_dest, "There should be more empty space!");
-		writes += writesData(dest, src_de.type, src_de.data, empty_space_after_dest);
+		writeData(dest, src_de.type, src_de.data, empty_space_after_dest);
 	}
 
 	// Clear data before dest
 	if (empty_space_before_dest != 0) {
 		HppAssert(empty_b4_dest + empty_space_before_dest <= datasec_end, "Overflow!");
 		HppAssert(empty_space_before_dest >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
-		writes += writesEmpty(empty_b4_dest, empty_space_before_dest - Nodes::Dataentry::HEADER_SIZE, false);
+		writeEmpty(empty_b4_dest, empty_space_before_dest - Nodes::Dataentry::HEADER_SIZE, false);
 	}
 
 	// If datasection end was changed, then write it too
@@ -2142,11 +1890,11 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 		// Inform FileIO about new data end
 		io.setEndOfData(datasec_end);
 
-		writes += writesRootRefAndCounts();
+		writeRootRefAndCounts();
 	}
 
 	// Do writes
-	io.doJournalAndWrites(writes);
+	io.flushWrites(true);
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 }
 

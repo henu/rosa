@@ -1,14 +1,13 @@
 #ifndef FILEIO_H
 #define FILEIO_H
 
-#include "writes.h"
-
 #include <hpp/path.h>
 #include <hpp/bytev.h>
 #include <fstream>
 #include <map>
 #include <list>
 
+// TODO: If archive is opened in read only mode, apply journal to read cache
 class FileIO
 {
 
@@ -52,19 +51,10 @@ public:
 	// Finish writes that are in queue either with journal or without it
 	void flushWrites(bool use_journal);
 
-	// Applies Writes to file
-	void doWrites(Writes const& writes, bool do_not_crypt = false);
-
-	// Applies first journal, then writes, and finally clear journal flag.
-	void doJournalAndWrites(Writes const& writes);
-
 	// Reads and applies writes that are found from journal. If journal
 	// does not exist, then this function does nothing. Returns true
 	// whenever interrupted journal was found (and applied).
 	bool finishPossibleInterruptedJournal(void);
-
-	// Flush buffered contents of files to the disk
-	inline void flush(void) { file.flush(); }
 
 private:
 
