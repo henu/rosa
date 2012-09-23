@@ -11,6 +11,7 @@
 #include <hpp/aes256ofbcipher.h>
 #include <hpp/random.h>
 #include <cstring>
+#include <iostream>
 
 #ifdef ENABLE_FILEIO_CACHE
 FileIO::FileIO(size_t readcache_max_size) :
@@ -20,6 +21,8 @@ FileIO::FileIO(void) :
 data_end(0),
 #ifdef ENABLE_FILEIO_CACHE
 readcache_max_size(readcache_max_size),
+#else
+readcache_max_size(0),
 #endif
 readcache_total_size(0),
 journal_exists(false)
@@ -29,7 +32,7 @@ journal_exists(false)
 FileIO::~FileIO(void)
 {
 	if (!writecache.empty()) {
-		throw Hpp::Exception("There are unflushed writes!");
+		std::cerr << "WARNING: There are unflushed writes!" << std::endl;
 	}
 
 	for (Readcache::iterator readcache_it = readcache.begin();

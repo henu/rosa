@@ -370,6 +370,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_RENAME) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
+(void)snapshot_new;
 	} else if (action == ACTION_RESTORE) {
 		Hpp::Path snapshot_path = Hpp::Path("/") / snapshot;
 		Paths snapshot_path_v;
