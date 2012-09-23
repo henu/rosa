@@ -14,53 +14,61 @@ namespace Nodes
 
 struct Metadata
 {
-	static size_t const ENTRY_SIZE = 80;
+	static size_t const ENTRY_SIZE = 103;
+	static uint64_t const NULL_REF = uint64_t(-1);
 
-	bool empty;
 	Hpp::ByteV hash;
 	uint32_t refs;
+	// Binary search tree variables
+	uint64_t parent;
+	uint64_t child_small;
+	uint64_t child_big;
 	// This points to the beginning of data entry, i.e. to its header.
 	uint64_t data_loc;
 	uint32_t data_size_uncompressed;
 
 	inline Metadata(void) :
-	empty(true),
 	refs(0),
+	parent(NULL_REF),
+	child_small(NULL_REF),
+	child_big(NULL_REF),
 	data_loc(0),
 	data_size_uncompressed(0)
 	{
 	}
 
-	inline Metadata(Hpp::ByteV const& serialized) :
-	refs(0),
-	data_loc(0),
-	data_size_uncompressed(0)
+	inline Metadata(Hpp::ByteV const& serialized)
 	{
-		empty = serialized[0] >= 128;
-		if (!empty) {
-			HppAssert(serialized.size() == ENTRY_SIZE, "Invalid serialized size!");
-			hash.insert(hash.end(), serialized.begin() + 1, serialized.begin() + 1 + NODE_HASH_SIZE);
-			refs = Hpp::cStrToUInt(&serialized[1 + NODE_HASH_SIZE], 3);
-			data_loc = Hpp::cStrToUInt64(&serialized[1 + NODE_HASH_SIZE + 3]);
-			data_size_uncompressed = Hpp::cStrToUInt32(&serialized[1 + NODE_HASH_SIZE + 11]);
-		}
+		HppAssert(serialized.size() == ENTRY_SIZE, "Invalid serialized size!");
+
+		hash.insert(hash.end(), serialized.begin(), serialized.begin() + NODE_HASH_SIZE);
+		refs = Hpp::cStrToUInt(&serialized[NODE_HASH_SIZE], 3);
+
+		parent = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 3]);
+		child_small = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 11]);
+		child_big = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 19]);
+
+		data_loc = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 27]);
+		data_size_uncompressed = Hpp::cStrToUInt32(&serialized[NODE_HASH_SIZE + 35]);
 	}
 
 	inline Hpp::ByteV serialize(void) const
 	{
 		Hpp::ByteV result;
-		if (empty) {
-			result.reserve(1);
-			result.push_back(Hpp::randomInt(128, 255));
-		} else {
-			result.reserve(ENTRY_SIZE);
-			result.push_back(Hpp::randomInt(0, 127));
-			result += hash;
-			result += Hpp::uIntToByteV(refs, 3);
-			result += Hpp::uInt64ToByteV(data_loc);
-			result += Hpp::uInt32ToByteV(data_size_uncompressed);
-			HppAssert(result.size() == ENTRY_SIZE, "Invalid serialized size!");
-		}
+		result.reserve(ENTRY_SIZE);
+
+		result += hash;
+		result += Hpp::uIntToByteV(refs, 3);
+
+		result += Hpp::uInt64ToByteV(parent);
+		result += Hpp::uInt64ToByteV(child_small);
+		result += Hpp::uInt64ToByteV(child_big);
+
+		result += Hpp::uInt64ToByteV(data_loc);
+		result += Hpp::uInt32ToByteV(data_size_uncompressed);
+
+		HppAssert(result.size() == ENTRY_SIZE, "Invalid serialized size!");
+
 		return result;
 	}
 
@@ -69,15 +77,22 @@ struct Metadata
 	{
 		return hash < metadata.hash;
 	}
+	inline bool operator==(Metadata const& metadata) const
+	{
+		return hash == metadata.hash;
+	}
+
+	inline static std::string searchtreeRefToString(uint64_t ref)
+	{
+		if (ref == NULL_REF) return "null";
+		return Hpp::sizeToStr(ref);
+	}
+
 };
 
 inline std::ostream& operator<<(std::ostream& strm, Metadata const& metadata)
 {
-	if (metadata.empty) {
-		strm << "<empty>";
-	} else {
-		strm << Hpp::byteVToHexV(metadata.hash) << " (refs: " << metadata.refs << ", data loc: " << metadata.data_loc << ", data size: " << metadata.data_size_uncompressed << ")";
-	}
+	strm << Hpp::byteVToHexV(metadata.hash) << " (refs: " << metadata.refs << ", st.parent: " << Metadata::searchtreeRefToString(metadata.parent) << ", st.child_s: " << Metadata::searchtreeRefToString(metadata.child_small) << ", st.child_b: " << Metadata::searchtreeRefToString(metadata.child_big) << ", data loc: " << metadata.data_loc << ", data size: " << metadata.data_size_uncompressed << ")";
 	return strm;
 }
 

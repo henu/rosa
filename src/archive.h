@@ -59,10 +59,8 @@ public:
 	inline bool isPasswordProtected(void) const { return !crypto_key.empty(); }
 	inline Hpp::ByteV getPasswordVerifier(void) const { return crypto_password_verifier; }
 	inline Hpp::ByteV getRootReference(void) const { return root_ref; }
-	inline uint64_t getSortedMetadataAllocation(void) const { return metas_s_size; }
-	inline uint64_t getUnsortedMetadataAllocation(void) const { return metas_us_size; }
-	Nodes::Metadata getSortedMetadata(size_t metadata_ofs);
-	Nodes::Metadata getUnsortedMetadata(size_t metadata_ofs);
+	inline uint64_t getNumOfNodes(void) const { return nodes_size; }
+	Nodes::Metadata getMetadata(size_t metadata_ofs) { return getNodeMetadata(metadata_ofs); }
 	inline uint64_t getDataSectionBegin(void) const { return getSectionBegin(SECTION_DATA); }
 	inline uint64_t getDataSectionEnd(void) const { return datasec_end; }
 	uint64_t getNextDataentry(uint64_t data_entry_loc);
@@ -79,6 +77,8 @@ public:
 	bool verifyDataentriesAreValid(bool throw_exception = false);
 	bool verifyNoDoubleMetadatas(bool throw_exception = false);
 	bool verifyReferences(bool throw_exception = false);
+	bool verifyMetadatas(bool throw_exception = false);
+	bool verifyRootNodeExists(bool throw_exception = false);
 
 private:
 
@@ -92,8 +92,7 @@ private:
 		SECTION_JOURNAL_INFO,
 		SECTION_ORPHAN_NODES_FLAG,
 		SECTION_ROOT_REF_AND_SIZES,
-		SECTION_METADATA_SORTED,
-		SECTION_METADATA_UNSORTED,
+		SECTION_METADATA,
 		SECTION_DATA
 	};
 
@@ -117,9 +116,9 @@ private:
 	// Reference to root node
 	Hpp::ByteV root_ref;
 
-	// Amount of nodes in both sorted and unsorted metadata sections.
-	uint64_t metas_s_size;
-	uint64_t metas_us_size;
+	// Amount of nodes and location of first node in the search tree
+	uint64_t nodes_size;
+	uint64_t searchtree_begin;
 // TODO: In future, store this only to FileIO, if it looks clever!
 	uint64_t datasec_end;
 
@@ -139,6 +138,16 @@ private:
 	// ----------------------------------------
 	// Some query functions
 	// ----------------------------------------
+
+	// Finds metadata from search tree or if metadata does not exists,
+	// finds metadata that could be used as its parent in search tree.
+	// Return value tells which one was found. If 0 is returned, then the
+	// metadata was found, if 1 then the metadata does not exist in the
+	// search tree and parent with free smaller child was found. If 2 is
+	// returned, then it means a parent with free bigger child was found.
+	// The found metadata and/or its location is stored into given result
+	// variables, if they are not NULL.
+	uint8_t findMetadataFromSearchtree(Nodes::Metadata* result_metadata, uint64_t* result_metadata_loc, Hpp::ByteV const& hash, uint64_t begin_loc);
 
 	// Finds metadata. Returns location of metadata relative to begin
 	// of sorted metadatas. Measured in multiples of metadata entries.
@@ -165,12 +174,6 @@ private:
 	// exception if path does not exist. Root can be either current root
 	// (root_ref), or some custom root during an atomic action.
 	Nodes::Folders getFoldersToPath(Hpp::ByteV const& root, Hpp::Path const& path);
-
-	// Returns empty metadata slot from unsorted section. If there
-	// is no space there, then this function will make some.
-	size_t getEmptyMetadataSlot(void);
-
-	size_t getAmountOfNonemptyMetadataslotsAtRange(size_t begin, size_t end);
 
 
 	// ----------------------------------------
@@ -218,13 +221,11 @@ private:
 	// is relative to begin of unsorted metadatas and
 	// is measured in multiples of metadata entries.
 	Writes writesMetadata(Nodes::Metadata const& meta, size_t metadata_loc);
+	void writeMetadata(Nodes::Metadata const& meta, size_t metadata_loc);
 
-	// Writes root reference, metadata sizes and end of data
-	// section. You also need to specify how many bytes of empty
-	// data there will be after this part. This includes the
-	// header too, so it needs to be eight or bigger. Zero is
-	// also accepted, in which case not even header is written.
+	// Writes root reference, number of nodes and end of data section.
 	Writes writesRootRefAndCounts(void);
+	void writeRootRefAndCounts(void);
 
 	// Empty space in bytes, after this data entry and its header has been
 	// written to given location. You can set empty_space_after to zero if
@@ -238,18 +239,22 @@ private:
 	// to false, if there is no real data entry after this, becuase otherwise
 	// it gets corrupted data.
 	Writes writesEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
+	void writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
 
 	// Clears specific node. Marks it as empty
 	// to data section and to metadata section.
 	Writes writesClearNode(Nodes::Metadata const& metadata, size_t metadata_loc);
+	void writeClearNode(Nodes::Metadata const& metadata, size_t metadata_loc);
 
 
 	// ----------------------------------------
 	// More miscellaneous functions
 	// ----------------------------------------
 
-	// Allocates more slots for unsorted metadata entries
-	void allocateUnsortedMetadatas(size_t amount);
+	// Relocates first data entries and replace them with an empty
+	// dataentry that has given size with header included. This is
+	// used when more metadatas are needed.
+	void ensureEmptyDataentryAtBeginning(size_t bytes);
 
 	// Spawns new node if it does not exist already. If new node
 	// is created, then it means its reference count will be zero.
@@ -258,8 +263,7 @@ private:
 
 	// Recursively clear this node (which should be orphan)
 	// and all of its children that become orphans.
-	void clearOrphanNodeRecursively(Nodes::Metadata const& metadata,
-	                                size_t metadata_loc,
+	void clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 	                                Nodes::Type type);
 
 	void setOrphanNodesFlag(bool flag);
@@ -294,6 +298,7 @@ private:
 	// Factory functions from raw data
 	static Nodes::Node* spawnNodeFromDataAndType(Hpp::ByteV const& data, Nodes::Type type);
 	static Nodes::Node* spawnNodeFromDataentry(Nodes::Dataentry const& dataentry);
+
 
 };
 

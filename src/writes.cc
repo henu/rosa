@@ -31,6 +31,7 @@ Writes writesJournal(uint64_t journal_info_begin, uint64_t journal_begin, Writes
 			uint64_t begin = journal_it->first;
 			Hpp::ByteV const& data = journal_it->second;
 			journal_srz += Hpp::uInt64ToByteV(begin);
+			journal_srz.push_back(rand() % 0x80 + 0x80);
 			journal_srz += Hpp::uInt32ToByteV(data.size());
 			journal_srz += data;
 		}

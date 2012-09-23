@@ -1,6 +1,7 @@
 #include "archiver.h"
 
 #include "nodes/folder.h"
+#include "exceptions/alreadyexists.h"
 
 Archiver::Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions) :
 archive(useroptions)
@@ -28,7 +29,7 @@ void Archiver::printDebugInformation(std::ostream* strm)
 
 	(*strm) << "Root node: " << Hpp::byteVToHexV(archive.getRootReference()) << std::endl;
 
-	(*strm) << "Space allocated for metadata (sorted/unsorted): " << archive.getSortedMetadataAllocation() << "/" << archive.getUnsortedMetadataAllocation() << std::endl;
+	(*strm) << "Number of nodes:: " << archive.getNumOfNodes() << std::endl;
 
 	(*strm) << "End of data section: " << archive.getDataSectionEnd() << std::endl;
 
@@ -46,19 +47,11 @@ void Archiver::printDebugInformation(std::ostream* strm)
 	else (*strm) << "No";
 	(*strm) << std::endl;
 
-	(*strm) << "Sorted metadata:" << std::endl;
+	(*strm) << "Metadata:" << std::endl;
 	for (size_t metadata_ofs = 0;
-	     metadata_ofs < archive.getSortedMetadataAllocation();
+	     metadata_ofs < archive.getNumOfNodes();
 	     ++ metadata_ofs) {
-		Nodes::Metadata metadata = archive.getSortedMetadata(metadata_ofs);
-		(*strm) << "  " << metadata_ofs << " " << metadata << std::endl;
-	}
-
-	(*strm) << "Unsorted metadata:" << std::endl;
-	for (size_t metadata_ofs = 0;
-	     metadata_ofs < archive.getUnsortedMetadataAllocation();
-	     ++ metadata_ofs) {
-		Nodes::Metadata metadata = archive.getUnsortedMetadata(metadata_ofs);
+		Nodes::Metadata metadata = archive.getMetadata(metadata_ofs);
 		(*strm) << "  " << metadata_ofs << " " << metadata << std::endl;
 	}
 
@@ -129,7 +122,7 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 		fsmetadata.readFromCurrentEnvironment();
 		archive.createNewFolders(Paths(1, snapshot_path), fsmetadata);
 	}
-	catch (Hpp::Exception) {
+	catch (Exceptions::AlreadyExists) {
 	}
 
 	archive.put(sources, snapshot_path);
@@ -151,6 +144,8 @@ void Archiver::verify(void)
 	archive.verifyDataentriesAreValid(true);
 	archive.verifyNoDoubleMetadatas(true);
 	archive.verifyReferences(true);
+	archive.verifyMetadatas(true);
+	archive.verifyRootNodeExists(true);
 }
 
 void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent, std::ostream* strm)
