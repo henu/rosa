@@ -9,28 +9,33 @@
 #include <hpp/cast.h>
 #include <hpp/misc.h>
 #include <hpp/aes256ofbcipher.h>
+#include <hpp/random.h>
 #include <cstring>
 
 #ifdef ENABLE_FILEIO_CACHE
-FileIO::FileIO(size_t cache_max_size) :
+FileIO::FileIO(size_t readcache_max_size) :
 #else
 FileIO::FileIO(void) :
 #endif
 data_end(0),
 #ifdef ENABLE_FILEIO_CACHE
-cache_max_size(cache_max_size),
+readcache_max_size(readcache_max_size),
 #endif
-cache_total_size(0),
+readcache_total_size(0),
 journal_exists(false)
 {
 }
 
 FileIO::~FileIO(void)
 {
-	for (Cache::iterator cache_it = cache.begin();
-	     cache_it != cache.end();
-	     ++ cache_it) {
-		delete cache_it->second;
+	if (!writecache.empty()) {
+		throw Hpp::Exception("There are unflushed writes!");
+	}
+
+	for (Readcache::iterator readcache_it = readcache.begin();
+	     readcache_it != readcache.end();
+	     ++ readcache_it) {
+		delete readcache_it->second;
 	}
 }
 
@@ -76,12 +81,19 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	Hpp::Profiler prof("FileIO::readPart");
 	#endif
 
-	// Check if part exists in cache
+	// Check if part exists in write cache
+	Writecache::iterator writecache_find = writecache.find(offset);
+// TODO: Would it be a good idea to always want data area that has same size?
+	if (writecache_find != writecache.end() && writecache_find->second.data.size() == size) {
+		return writecache_find->second.data;
+	}
+
+	// Check if part exists in read cache
 	#ifdef ENABLE_FILEIO_CACHE
-	Cache::iterator cache_find = cache.find(offset);
-	if (cache_find != cache.end() && cache_find->second->data.size() == size) {
-		moveToFrontInCache(cache_find);
-		return cache_find->second->data;
+	Readcache::iterator readcache_find = readcache.find(offset);
+	if (readcache_find != readcache.end() && readcache_find->second->data.size() == size) {
+		moveToFrontInReadcache(readcache_find);
+		return readcache_find->second->data;
 	}
 	#endif
 
@@ -94,7 +106,7 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	// Check encryption
 	if (do_not_decrypt || crypto_key.empty()) {
 		#ifdef ENABLE_FILEIO_CACHE
-		storeToCache(offset, part);
+		storeToReadcache(offset, part);
 		#endif
 		return part;
 	} else {
@@ -104,10 +116,147 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 		cipher.decrypt(part);
 		cipher.readDecrypted(part_decrypted, true);
 		#ifdef ENABLE_FILEIO_CACHE
-		storeToCache(offset, part_decrypted);
+		storeToReadcache(offset, part_decrypted);
 		#endif
 		return part_decrypted;
 	}
+}
+
+void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
+{
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::writeChunk");
+	#endif
+
+	uint64_t end = offset + chunk.size();
+
+	// Remove possible overlapping chunks from readcache and from
+	// writecache. Start from those that begin after this one
+	Readcache::iterator readcache_find;
+	while ((readcache_find = readcache.lower_bound(offset)) != readcache.end()) {
+		if (readcache_find->first >= end) {
+			break;
+		}
+		readcache_total_size -= readcache_find->second->data.size();
+		readcache_priors.erase(readcache_find->second->prior_it);
+		delete readcache_find->second;
+		readcache.erase(readcache_find);
+	}
+	// Then clear those that begin before this new one
+	while ((readcache_find = readcache.lower_bound(offset)) != readcache.begin()) {
+		-- readcache_find;
+		if (readcache_find->first + readcache_find->second->data.size() <= offset) {
+			break;
+		}
+		readcache_total_size -= readcache_find->second->data.size();
+		readcache_priors.erase(readcache_find->second->prior_it);
+		delete readcache_find->second;
+		readcache.erase(readcache_find);
+	}
+	// Then do same for writecache
+	Writecache::iterator writecache_find;
+	while ((writecache_find = writecache.lower_bound(offset)) != writecache.end()) {
+		if (writecache_find->first >= end) {
+			break;
+		}
+		writecache.erase(writecache_find);
+	}
+	while ((writecache_find = writecache.lower_bound(offset)) != writecache.begin()) {
+		-- writecache_find;
+		if (writecache_find->first + writecache_find->second.data.size() <= offset) {
+			break;
+		}
+		writecache.erase(writecache_find);
+	}
+
+	// Store new writechunk
+	Writecachechunk new_chunk;
+	new_chunk.encrypt = encrypt;
+	new_chunk.data = chunk;
+	writecache[offset] = new_chunk;
+}
+
+void FileIO::flushWrites(bool use_journal)
+{
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::flushWrites");
+	#endif
+
+	// Write journal, if its wanted
+	if (use_journal) {
+		// First ensure there is no journal already
+		if (journal_exists) {
+			throw Hpp::Exception("There is already journal!");
+		}
+
+		// Ensure none of writes go over the end of data
+		#ifndef NDEBUG
+		for (Writecache::const_iterator writecache_it = writecache.begin();
+		     writecache_it != writecache.end();
+		     ++ writecache_it) {
+			uint64_t offset = writecache_it->first;
+			Hpp::ByteV const& data = writecache_it->second.data;
+			HppAssert(offset + data.size() <= data_end, "One of writes in cache overflows beyond data area!");
+		}
+		#endif
+
+		// Write journal location to disk
+		writeToDisk(getJournalInfoLocation(), Hpp::uInt64ToByteV(data_end));
+
+		// Serialize journal to byte vector
+		Hpp::ByteV journal_srz;
+		for (Writecache::const_iterator writecache_it = writecache.begin();
+		     writecache_it != writecache.end();
+		     ++ writecache_it) {
+			uint64_t offset = writecache_it->first;
+			Writecachechunk const& chunk = writecache_it->second;
+			journal_srz += Hpp::uInt64ToByteV(offset);
+			if (chunk.encrypt) {
+				journal_srz.push_back(Hpp::randomInt(0x80, 0xff));
+			} else {
+				journal_srz.push_back(Hpp::randomInt(0, 0x7f));
+			}
+			journal_srz += Hpp::uInt32ToByteV(chunk.data.size());
+			journal_srz += chunk.data;
+		}
+
+		// Write journal to disk
+		writeToDisk(data_end, Hpp::uInt64ToByteV(journal_srz.size()));
+		writeToDisk(data_end + 8, journal_srz);
+		file.flush();
+
+		// Write journal flag to disk
+		writeJournalflag(true);
+		journal_exists = true;
+		file.flush();
+
+	}
+
+	// Now do actual writes
+	for (Writecache::const_iterator writecache_it = writecache.begin();
+	     writecache_it != writecache.end();
+	     ++ writecache_it) {
+		uint64_t offset = writecache_it->first;
+		Writecachechunk const& chunk = writecache_it->second;
+		writeToDisk(offset, chunk.data, chunk.encrypt);
+	}
+	file.flush();
+
+	// Finally clear journal flag
+	clearJournalFlag();
+
+	// Clear writecache, but first move chunks to readcache
+	#ifdef ENABLE_FILEIO_CACHE
+	for (Writecache::const_iterator writecache_it = writecache.begin();
+	     writecache_it != writecache.end();
+	     ++ writecache_it) {
+		uint64_t offset = writecache_it->first;
+		Writecachechunk const& chunk = writecache_it->second;
+
+		storeToReadcache(offset, chunk.data);
+	}
+	#endif
+	writecache.clear();
 }
 
 void FileIO::doWrites(Writes const& writes, bool do_not_crypt)
@@ -152,7 +301,7 @@ void FileIO::doWrites(Writes const& writes, bool do_not_crypt)
 		}
 
 		#ifdef ENABLE_FILEIO_CACHE
-		storeToCache(offset, data);
+		storeToReadcache(offset, data);
 		#endif
 	}
 }
@@ -204,18 +353,13 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 
 	// Deserialize journal
 	Hpp::ByteV::const_iterator journal_srz_it = journal_srz.begin();
-	Writes journal;
 	while (journal_srz_it != journal_srz.end()) {
 		uint64_t begin = Hpp::deserializeUInt64(journal_srz_it, journal_srz.end());
+		bool encrypt = Hpp::deserializeUInt8(journal_srz_it, journal_srz.end()) >= 0x80;
 		uint32_t size = Hpp::deserializeUInt32(journal_srz_it, journal_srz.end());
-		if (journal.find(begin) != journal.end()) {
-			throw Hpp::Exception("Invalid journal! Multiple writes begin from same location!");
-		}
-		journal[begin] = Hpp::deserializeByteV(journal_srz_it, journal_srz.end(), size);
+		Hpp::ByteV data = Hpp::deserializeByteV(journal_srz_it, journal_srz.end(), size);
+		writeToDisk(begin, data, encrypt);
 	}
-
-	// Do writes
-	doWrites(journal);
 
 	// Finally clear journal flag
 	clearJournalFlag();
@@ -226,8 +370,7 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 
 void FileIO::clearJournalFlag(void)
 {
-	Writes writes = writesJournalFlag(getJournalFlagLocation(), false);
-	doWrites(writes);
+	writeJournalflag(false);
 	file.sync();
 	journal_exists = false;
 }
@@ -266,6 +409,32 @@ uint64_t FileIO::getJournalInfoLocation(void) const
 	return getJournalFlagLocation() + 1;
 }
 
+void FileIO::writeJournalflag(bool journal_exists)
+{
+	Hpp::ByteV flag_serialized;
+	if (journal_exists) {
+		flag_serialized.push_back(Hpp::randomInt(0x80, 0xff));
+	} else {
+		flag_serialized.push_back(Hpp::randomInt(0, 0x7f));
+	}
+
+	writeToDisk(getJournalFlagLocation(), flag_serialized);
+}
+
+void FileIO::writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt)
+{
+	file.seekp(offset, std::ios_base::beg);
+	if (crypto_key.empty() || !encrypt) {
+		file.write((char const*)&data[0], data.size());
+	} else {
+		Hpp::ByteV data_crypted;
+		Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
+		cipher.encrypt(data);
+		cipher.readEncrypted(data_crypted, true);
+		file.write((char const*)&data_crypted[0], data_crypted.size());
+	}
+}
+
 Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 {
 	Hpp::ByteV result(8, 0);
@@ -275,68 +444,68 @@ Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 }
 
 #ifdef ENABLE_FILEIO_CACHE
-void FileIO::storeToCache(uint64_t offset, Hpp::ByteV const& chunk)
+void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 {
-	if (chunk.size() >= cache_max_size / 2) {
+	if (chunk.size() >= readcache_max_size / 2) {
 		return;
 	}
 
 	uint64_t end = offset + chunk.size();
-	Cache::iterator cache_find;
+	Readcache::iterator readcache_find;
 	// Clear overlapping chunks. Start from
 	// those that begin after this new one
-	while ((cache_find = cache.lower_bound(offset)) != cache.end()) {
-		if (cache_find->first >= end) {
+	while ((readcache_find = readcache.lower_bound(offset)) != readcache.end()) {
+		if (readcache_find->first >= end) {
 			break;
 		}
-		cache_total_size -= cache_find->second->data.size();
-		cache_priors.erase(cache_find->second->prior_it);
-		delete cache_find->second;
-		cache.erase(cache_find);
+		readcache_total_size -= readcache_find->second->data.size();
+		readcache_priors.erase(readcache_find->second->prior_it);
+		delete readcache_find->second;
+		readcache.erase(readcache_find);
 	}
 	// Then clear those that begin before this new one
-	while ((cache_find = cache.lower_bound(offset)) != cache.begin()) {
-		-- cache_find;
-		if (cache_find->first + cache_find->second->data.size() <= offset) {
+	while ((readcache_find = readcache.lower_bound(offset)) != readcache.begin()) {
+		-- readcache_find;
+		if (readcache_find->first + readcache_find->second->data.size() <= offset) {
 			break;
 		}
-		cache_total_size -= cache_find->second->data.size();
-		cache_priors.erase(cache_find->second->prior_it);
-		delete cache_find->second;
-		cache.erase(cache_find);
+		readcache_total_size -= readcache_find->second->data.size();
+		readcache_priors.erase(readcache_find->second->prior_it);
+		delete readcache_find->second;
+		readcache.erase(readcache_find);
 	}
 
 	// Store
-	Cacheitem* new_citem = new Cacheitem;
+	Readcachechunk* new_chunk = new Readcachechunk;
 	try {
-		new_citem->data = chunk;
-		std::pair< Cache::iterator, bool > insert_result = cache.insert(Cache::value_type(offset, new_citem));
+		new_chunk->data = chunk;
+		std::pair< Readcache::iterator, bool > insert_result = readcache.insert(Readcache::value_type(offset, new_chunk));
 		HppAssert(insert_result.second, "There was already a value there!");
-		cache_priors.push_front(insert_result.first);
-		new_citem->prior_it = cache_priors.begin();
+		readcache_priors.push_front(insert_result.first);
+		new_chunk->prior_it = readcache_priors.begin();
 	}
 	catch ( ... ) {
-		delete new_citem;
+		delete new_chunk;
 		throw;
 	}
 
-	cache_total_size += chunk.size();
+	readcache_total_size += chunk.size();
 
 	// If cache has grown too big, then remove oldest elements from it
-	while (cache_total_size > cache_max_size) {
-		Cache::iterator oldest = cache_priors.back();
-		cache_total_size -= oldest->second->data.size();
+	while (readcache_total_size > readcache_max_size) {
+		Readcache::iterator oldest = readcache_priors.back();
+		readcache_total_size -= oldest->second->data.size();
 		delete oldest->second;
-		cache.erase(oldest);
-		cache_priors.pop_back();
+		readcache.erase(oldest);
+		readcache_priors.pop_back();
 	}
 }
 
-void FileIO::moveToFrontInCache(Cache::iterator& cache_find)
+void FileIO::moveToFrontInReadcache(Readcache::iterator& readcache_find)
 {
-	cache_priors.erase(cache_find->second->prior_it);
-	cache_priors.push_front(cache_find);
-	cache_find->second->prior_it = cache_priors.begin();
+	readcache_priors.erase(readcache_find->second->prior_it);
+	readcache_priors.push_front(readcache_find);
+	readcache_find->second->prior_it = readcache_priors.begin();
 }
 
 #endif

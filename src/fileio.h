@@ -15,7 +15,7 @@ class FileIO
 public:
 
 	#ifdef ENABLE_FILEIO_CACHE
-	FileIO(size_t cache_max_size);
+	FileIO(size_t readcache_max_size);
 	#else
 	FileIO(void);
 	#endif
@@ -45,6 +45,13 @@ public:
 	// turned on, then the part will be decrypted automatically.
 	Hpp::ByteV readPart(size_t offset, size_t size, bool do_not_decrypt = false);
 
+	// Adds encryptable chunk to the queue of writes. If encryption
+	// is not wanted, then do_not_crypt must be enabled.
+	void writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt = true);
+
+	// Finish writes that are in queue either with journal or without it
+	void flushWrites(bool use_journal);
+
 	// Applies Writes to file
 	void doWrites(Writes const& writes, bool do_not_crypt = false);
 
@@ -61,14 +68,22 @@ public:
 
 private:
 
-	struct Cacheitem;
-	typedef std::map< uint64_t, Cacheitem* > Cache;
-	typedef std::list< Cache::iterator > Cachepriorities;
-	struct Cacheitem
+	struct Readcachechunk;
+	typedef std::map< uint64_t, Readcachechunk* > Readcache;
+	typedef std::list< Readcache::iterator > Readcachepriorities;
+	struct Readcachechunk
 	{
 		Hpp::ByteV data;
-		Cachepriorities::iterator prior_it;
+		Readcachepriorities::iterator prior_it;
 	};
+
+// TODO: In future, make Writecache to support chained writes! This means that when user wants to flush, the writes might just get queued in a chain. This is useful for filesystems that do not like many flushes. In this chain queue, join those writes that use subsequent journals. Joining means that older one of overlapping chunks is not written.
+	struct Writecachechunk
+	{
+		Hpp::ByteV data;
+		bool encrypt;
+	};
+	typedef std::map< uint64_t, Writecachechunk > Writecache;
 
 	std::fstream file;
 
@@ -79,10 +94,12 @@ private:
 	// for it and it MUST be updated by the user!
 	uint64_t data_end;
 
-	Cache cache;
-	Cachepriorities cache_priors;
-	size_t cache_max_size;
-	size_t cache_total_size;
+	Readcache readcache;
+	Readcachepriorities readcache_priors;
+	size_t readcache_max_size;
+	size_t readcache_total_size;
+
+	Writecache writecache;
 
 	// Is there journal or orphan nodes
 	bool journal_exists;
@@ -95,19 +112,25 @@ private:
 	uint64_t getJournalFlagLocation(void) const;
 	uint64_t getJournalInfoLocation(void) const;
 
+	// Writes for journal flag
+	void writeJournalflag(bool journal_exists);
+
+	// Actual writing function
+	void writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt = true);
+
 	// Generates initial vector for cipher, based on file offset
 	static Hpp::ByteV generateCryptoIV(size_t offset);
 
 	// Stores given chunk to cache. Also clears anything
 	// that is even partly overlapping this new data.
 	#ifdef ENABLE_FILEIO_CACHE
-	void storeToCache(uint64_t offset, Hpp::ByteV const& chunk);
+	void storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk);
 	#endif
 
 	// Moves specific chunk to the front, so it will be the last
 	// one that will be removed in case cache becomes full.
 	#ifdef ENABLE_FILEIO_CACHE
-	void moveToFrontInCache(Cache::iterator& cache_find);
+	void moveToFrontInReadcache(Readcache::iterator& readcache_find);
 	#endif
 
 };
