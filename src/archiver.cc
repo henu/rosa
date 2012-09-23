@@ -29,7 +29,8 @@ void Archiver::printDebugInformation(std::ostream* strm)
 
 	(*strm) << "Root node: " << Hpp::byteVToHexV(archive.getRootReference()) << std::endl;
 
-	(*strm) << "Number of nodes:: " << archive.getNumOfNodes() << std::endl;
+	(*strm) << "Number of nodes: " << archive.getNumOfNodes() << std::endl;
+	(*strm) << "Begin of searchtree: " << archive.getBeginOfSearchtree() << std::endl;
 
 	(*strm) << "End of data section: " << archive.getDataSectionEnd() << std::endl;
 

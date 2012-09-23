@@ -60,6 +60,7 @@ public:
 	inline Hpp::ByteV getPasswordVerifier(void) const { return crypto_password_verifier; }
 	inline Hpp::ByteV getRootReference(void) const { return root_ref; }
 	inline uint64_t getNumOfNodes(void) const { return nodes_size; }
+	inline uint64_t getBeginOfSearchtree(void) const { return searchtree_begin; }
 	Nodes::Metadata getMetadata(size_t metadata_ofs) { return getNodeMetadata(metadata_ofs); }
 	inline uint64_t getDataSectionBegin(void) const { return getSectionBegin(SECTION_DATA); }
 	inline uint64_t getDataSectionEnd(void) const { return datasec_end; }
