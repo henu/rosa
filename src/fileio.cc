@@ -14,9 +14,9 @@
 #include <iostream>
 
 #ifdef ENABLE_FILEIO_CACHE
-FileIO::FileIO(size_t readcache_max_size) :
+FileIO::FileIO(size_t writecache_max_size, size_t readcache_max_size) :
 #else
-FileIO::FileIO(void) :
+FileIO::FileIO(size_t writecache_max_size) :
 #endif
 data_end(0),
 #ifdef ENABLE_FILEIO_CACHE
@@ -25,6 +25,8 @@ readcache_max_size(readcache_max_size),
 readcache_max_size(0),
 #endif
 readcache_total_size(0),
+writecache_max_size(writecache_max_size),
+writecache_total_size(0),
 journal_exists(false)
 {
 }
@@ -125,6 +127,12 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	}
 }
 
+void FileIO::initWrite(bool use_journal)
+{
+	HppAssert(writecache.empty(), "Writecache should be empty!");
+	writecache_uses_journal = use_journal;
+}
+
 void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 {
 	#ifdef ENABLE_PROFILER
@@ -179,14 +187,14 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 	writecache[offset] = new_chunk;
 }
 
-void FileIO::flushWrites(bool use_journal)
+void FileIO::flushWrites(void)
 {
 	#ifdef ENABLE_PROFILER
 	Hpp::Profiler prof("FileIO::flushWrites");
 	#endif
 
 	// Write journal, if its wanted
-	if (use_journal) {
+	if (writecache_uses_journal) {
 		// First ensure there is no journal already
 		if (journal_exists) {
 			throw Hpp::Exception("There is already journal!");

@@ -14,9 +14,9 @@ class FileIO
 public:
 
 	#ifdef ENABLE_FILEIO_CACHE
-	FileIO(size_t readcache_max_size);
+	FileIO(size_t writecache_max_size, size_t readcache_max_size);
 	#else
-	FileIO(void);
+	FileIO(size_t writecache_max_size);
 	#endif
 	~FileIO(void);
 
@@ -44,12 +44,14 @@ public:
 	// turned on, then the part will be decrypted automatically.
 	Hpp::ByteV readPart(size_t offset, size_t size, bool do_not_decrypt = false);
 
+	void initWrite(bool use_journal);
+
 	// Adds encryptable chunk to the queue of writes. If encryption
 	// is not wanted, then do_not_crypt must be enabled.
 	void writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt = true);
 
 	// Finish writes that are in queue either with journal or without it
-	void flushWrites(bool use_journal);
+	void flushWrites(void);
 
 	// Reads and applies writes that are found from journal. If journal
 	// does not exist, then this function does nothing. Returns true
@@ -90,6 +92,9 @@ private:
 	size_t readcache_total_size;
 
 	Writecache writecache;
+	bool writecache_uses_journal;
+	size_t writecache_max_size;
+	size_t writecache_total_size;
 
 	// Is there journal or orphan nodes
 	bool journal_exists;
