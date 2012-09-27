@@ -18,16 +18,12 @@ path(path)
 Symlink::Symlink(Hpp::ByteV const& serialized)
 {
 	Hpp::ByteV::const_iterator serialized_it = serialized.begin();
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
-(void)serialized_it;
+	path = Hpp::Path(Hpp::deserializeString(serialized_it, serialized.end(), 2));
 }
 
 void Symlink::serialize(Hpp::ByteV& result) const
 {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
-(void)result;
+	Hpp::serializeString(result, path.toString(true), 2);
 }
 
 }
