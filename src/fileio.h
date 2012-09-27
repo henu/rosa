@@ -76,6 +76,7 @@ private:
 		bool encrypt;
 	};
 	typedef std::map< uint64_t, Writecachechunk > Writecache;
+	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL };
 
 	std::fstream file;
 
@@ -92,7 +93,7 @@ private:
 	size_t readcache_total_size;
 
 	Writecache writecache;
-	bool writecache_uses_journal;
+	WritecacheState writecache_state;
 	size_t writecache_max_size;
 	size_t writecache_total_size;
 
@@ -112,6 +113,9 @@ private:
 
 	// Actual writing function
 	void writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt = true);
+
+	// Actual writecache writer
+	void writeWritecacheToDisk(bool use_journal);
 
 	// Generates initial vector for cipher, based on file offset
 	static Hpp::ByteV generateCryptoIV(size_t offset);

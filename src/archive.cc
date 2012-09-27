@@ -1442,8 +1442,6 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 	// then we might need to do some data relocations.
 	else {
 
-		io.initWrite(true);
-
 		// Move data entries until there is enough empty data
 		uint64_t min_dataentry_loc = datasec_begin + bytes;
 		while (empty_bytes_after_datasec_begin != (ssize_t)bytes && empty_bytes_after_datasec_begin < (ssize_t)bytes + (ssize_t)Nodes::Dataentry::HEADER_SIZE) {
@@ -1540,6 +1538,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		empty_bytes_after_datasec_begin -= bytes;
 
 		// Write new empty data entries
+		io.initWrite(true);
 		writeEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
 		if (empty_bytes_after_datasec_begin > 0) {
 			writeEmpty(datasec_begin + bytes, empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
@@ -1569,11 +1568,11 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 		throw Hpp::Exception("Flag of orphan nodes should be enabled, if you try to spawn completely new Nodes!");
 	}
 
-	io.initWrite(true);
-
 	// Make space for metadata
 	ensureEmptyDataentryAtBeginning(Nodes::Metadata::ENTRY_SIZE);
 	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
+
+	io.initWrite(true);
 
 	// Find location for new metadata from the searchtree
 	Nodes::Metadata parent;

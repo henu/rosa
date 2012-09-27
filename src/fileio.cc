@@ -25,6 +25,7 @@ readcache_max_size(readcache_max_size),
 readcache_max_size(0),
 #endif
 readcache_total_size(0),
+writecache_state(NOT_INITIALIZED),
 writecache_max_size(writecache_max_size),
 writecache_total_size(0),
 journal_exists(false)
@@ -129,8 +130,12 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 
 void FileIO::initWrite(bool use_journal)
 {
-	HppAssert(writecache.empty(), "Writecache should be empty!");
-	writecache_uses_journal = use_journal;
+	HppAssert(writecache_state == NOT_INITIALIZED, "Writecache is already initialized!");
+	if (use_journal) {
+		writecache_state = INITIALIZED_WITH_JOURNAL;
+	} else {
+		writecache_state = INITIALIZED_WITHOUT_JOURNAL;
+	}
 }
 
 void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
@@ -138,6 +143,8 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 	#ifdef ENABLE_PROFILER
 	Hpp::Profiler prof("FileIO::writeChunk");
 	#endif
+
+	HppAssert(writecache_state != NOT_INITIALIZED, "Writecache is not initialized!");
 
 	uint64_t end = offset + chunk.size();
 
@@ -189,85 +196,11 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 
 void FileIO::flushWrites(void)
 {
-	#ifdef ENABLE_PROFILER
-	Hpp::Profiler prof("FileIO::flushWrites");
-	#endif
+	HppAssert(writecache_state != NOT_INITIALIZED, "Writecache is not initialized!");
 
-	// Write journal, if its wanted
-	if (writecache_uses_journal) {
-		// First ensure there is no journal already
-		if (journal_exists) {
-			throw Hpp::Exception("There is already journal!");
-		}
+	writeWritecacheToDisk(writecache_state == INITIALIZED_WITH_JOURNAL);
 
-		// Ensure none of writes go over the end of data
-		#ifndef NDEBUG
-		for (Writecache::const_iterator writecache_it = writecache.begin();
-		     writecache_it != writecache.end();
-		     ++ writecache_it) {
-			uint64_t offset = writecache_it->first;
-			Hpp::ByteV const& data = writecache_it->second.data;
-			HppAssert(offset + data.size() <= data_end, "One of writes in cache overflows beyond data area!");
-		}
-		#endif
-
-		// Write journal location to disk
-		writeToDisk(getJournalInfoLocation(), Hpp::uInt64ToByteV(data_end));
-
-		// Serialize journal to byte vector
-		Hpp::ByteV journal_srz;
-		for (Writecache::const_iterator writecache_it = writecache.begin();
-		     writecache_it != writecache.end();
-		     ++ writecache_it) {
-			uint64_t offset = writecache_it->first;
-			Writecachechunk const& chunk = writecache_it->second;
-			journal_srz += Hpp::uInt64ToByteV(offset);
-			if (chunk.encrypt) {
-				journal_srz.push_back(Hpp::randomInt(0x80, 0xff));
-			} else {
-				journal_srz.push_back(Hpp::randomInt(0, 0x7f));
-			}
-			journal_srz += Hpp::uInt32ToByteV(chunk.data.size());
-			journal_srz += chunk.data;
-		}
-
-		// Write journal to disk
-		writeToDisk(data_end, Hpp::uInt64ToByteV(journal_srz.size()));
-		writeToDisk(data_end + 8, journal_srz);
-		file.flush();
-
-		// Write journal flag to disk
-		writeJournalflag(true);
-		journal_exists = true;
-		file.flush();
-
-	}
-
-	// Now do actual writes
-	for (Writecache::const_iterator writecache_it = writecache.begin();
-	     writecache_it != writecache.end();
-	     ++ writecache_it) {
-		uint64_t offset = writecache_it->first;
-		Writecachechunk const& chunk = writecache_it->second;
-		writeToDisk(offset, chunk.data, chunk.encrypt);
-	}
-	file.flush();
-
-	// Finally clear journal flag
-	clearJournalFlag();
-
-	// Clear writecache, but first move chunks to readcache
-	#ifdef ENABLE_FILEIO_CACHE
-	for (Writecache::const_iterator writecache_it = writecache.begin();
-	     writecache_it != writecache.end();
-	     ++ writecache_it) {
-		uint64_t offset = writecache_it->first;
-		Writecachechunk const& chunk = writecache_it->second;
-
-		storeToReadcache(offset, chunk.data);
-	}
-	#endif
-	writecache.clear();
+	writecache_state = NOT_INITIALIZED;
 }
 
 bool FileIO::finishPossibleInterruptedJournal(void)
@@ -353,6 +286,10 @@ void FileIO::writeJournalflag(bool journal_exists)
 
 void FileIO::writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::writeToDisk");
+	#endif
+
 	file.seekp(offset, std::ios_base::beg);
 	if (crypto_key.empty() || !encrypt) {
 		file.write((char const*)&data[0], data.size());
@@ -363,6 +300,89 @@ void FileIO::writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt)
 		cipher.readEncrypted(data_crypted, true);
 		file.write((char const*)&data_crypted[0], data_crypted.size());
 	}
+}
+
+void FileIO::writeWritecacheToDisk(bool use_journal)
+{
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::writeWritecacheToDisk");
+	#endif
+
+	// Write journal, if its wanted
+	if (use_journal) {
+		// First ensure there is no journal already
+		if (journal_exists) {
+			throw Hpp::Exception("There is already journal!");
+		}
+
+		// Ensure none of writes go over the end of data
+		#ifndef NDEBUG
+		for (Writecache::const_iterator writecache_it = writecache.begin();
+		     writecache_it != writecache.end();
+		     ++ writecache_it) {
+			uint64_t offset = writecache_it->first;
+			Hpp::ByteV const& data = writecache_it->second.data;
+			HppAssert(offset + data.size() <= data_end, "One of writes in cache overflows beyond data area!");
+		}
+		#endif
+
+		// Write journal location to disk
+		writeToDisk(getJournalInfoLocation(), Hpp::uInt64ToByteV(data_end));
+
+		// Serialize journal to byte vector
+		Hpp::ByteV journal_srz;
+		for (Writecache::const_iterator writecache_it = writecache.begin();
+		     writecache_it != writecache.end();
+		     ++ writecache_it) {
+			uint64_t offset = writecache_it->first;
+			Writecachechunk const& chunk = writecache_it->second;
+			journal_srz += Hpp::uInt64ToByteV(offset);
+			if (chunk.encrypt) {
+				journal_srz.push_back(Hpp::randomInt(0x80, 0xff));
+			} else {
+				journal_srz.push_back(Hpp::randomInt(0, 0x7f));
+			}
+			journal_srz += Hpp::uInt32ToByteV(chunk.data.size());
+			journal_srz += chunk.data;
+		}
+
+		// Write journal to disk
+		writeToDisk(data_end, Hpp::uInt64ToByteV(journal_srz.size()));
+		writeToDisk(data_end + 8, journal_srz);
+		file.flush();
+
+		// Write journal flag to disk
+		writeJournalflag(true);
+		journal_exists = true;
+		file.flush();
+
+	}
+
+	// Now do actual writes
+	for (Writecache::const_iterator writecache_it = writecache.begin();
+	     writecache_it != writecache.end();
+	     ++ writecache_it) {
+		uint64_t offset = writecache_it->first;
+		Writecachechunk const& chunk = writecache_it->second;
+		writeToDisk(offset, chunk.data, chunk.encrypt);
+	}
+	file.flush();
+
+	// Finally clear journal flag
+	clearJournalFlag();
+
+	// Clear writecache, but first move chunks to readcache
+	#ifdef ENABLE_FILEIO_CACHE
+	for (Writecache::const_iterator writecache_it = writecache.begin();
+	     writecache_it != writecache.end();
+	     ++ writecache_it) {
+		uint64_t offset = writecache_it->first;
+		Writecachechunk const& chunk = writecache_it->second;
+
+		storeToReadcache(offset, chunk.data);
+	}
+	#endif
+	writecache.clear();
 }
 
 Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
