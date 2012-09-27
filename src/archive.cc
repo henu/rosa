@@ -1262,7 +1262,12 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 		if (child_big_loc == Nodes::Metadata::NULL_REF) {
 			child_selected_loc = child_small_loc;
 			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		} else if (rand() % 2 == 0) {
+		}
+		// If both children are present, then use "random" to decide
+		// which one will replace this Node. It is good idea to not
+		// use real randomness, because that makes debugging harder.
+// TODO: In future, check at which range all children and grand children of this removed node are. Then calculate average from this, and select the child that is nearer this average value! This will automatically do some balancing to the searchtree.
+		else if (metadata.hash.back() % 2 == 0) {
 			child_selected_loc = child_small_loc;
 			child_not_selected_loc = child_big_loc;
 		} else {
@@ -1445,6 +1450,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 						moved_new_loc = min_dataentry_loc;
 						size_t empty_after_last_de = moved_new_loc - de_to_check_end;
 						if (empty_after_last_de != 0 && empty_after_last_de < 8) {
+// TODO: Would it be possible to say: moved_new_loc += (8 - empty_after_last_de)
 							moved_new_loc += 8;
 						}
 					} else {
@@ -1456,6 +1462,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 					uint64_t empty_b4_dest;
 					if (moved_de_loc == de_to_check_loc) empty_b4_dest = datasec_begin;
 					else empty_b4_dest = de_to_check_end;
+					HppAssert (moved_new_loc == empty_b4_dest || moved_new_loc >= empty_b4_dest + Nodes::Dataentry::HEADER_SIZE, "There won\'t be enough space before destination!");
 					moveData(moved_de_loc, moved_new_loc, datasec_begin, empty_b4_dest);
 					HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
 					break;
@@ -1463,19 +1470,22 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 
 				// There was no infinite amount of empty space,
 				// so check if movable data entry fits here and
-				// is not in the way of new metadatas.
+				// is not in the way of new metadata.
 				size_t empty_data_end = de_to_check_end + empty_bytes_after_de;
 				uint64_t possible_new_loc = std::max(min_dataentry_loc, de_to_check_end);
 				uint64_t possible_new_loc_end = possible_new_loc + Nodes::Dataentry::HEADER_SIZE + moved_de.size;
-				if (possible_new_loc_end == empty_data_end || possible_new_loc_end <= empty_data_end - Nodes::Dataentry::HEADER_SIZE) {
-					// If last de was the one being moved,
+				if (possible_new_loc_end == empty_data_end || possible_new_loc_end + Nodes::Dataentry::HEADER_SIZE <= empty_data_end) {
+					// If last Dataentry was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
 					uint32_t empty_b4_dest;
 					if (moved_de_loc == de_to_check_loc) empty_b4_dest = datasec_begin;
 					else empty_b4_dest = de_to_check_end;
-					moveData(moved_de_loc, possible_new_loc, datasec_begin, empty_b4_dest);
-					break;
+					// Ensure there is enough space before destination
+					if (possible_new_loc == empty_b4_dest || possible_new_loc >= empty_b4_dest + Nodes::Dataentry::HEADER_SIZE) {
+						moveData(moved_de_loc, possible_new_loc, datasec_begin, empty_b4_dest);
+						break;
+					}
 				}
 
 				// The moved data entry did not fit to
@@ -1987,7 +1997,7 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 				readFileHierarchy(child_hash, dummy, child_path);
 				child_fsmetadata = Nodes::FsMetadata(child_path);
 			}
-			catch (Hpp::Exception) {
+			catch (Exceptions::NotFound) {
 				// This error is most likely caused by a living
 				// file system. Maybe user just removed some
 				// file, while backup was being ran. This is
