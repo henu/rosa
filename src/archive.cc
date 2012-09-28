@@ -1461,22 +1461,21 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 				// space after this data entry.
 				ssize_t empty_bytes_after_de = calculateAmountOfEmptySpace(de_to_check_end);
 
-				// If there is infinite amount of empty data,
-				// then relocate data entry here. But be sure
-				// to move it far enough, so it wont get in the
-				// way of new metadatas. Also, be sure that the
-				// empty space between it and the last
-				// dataentry and the future data begin is
-				// either zero, or >= 8, so there can be empty
-				// space between them.
+				// If there is infinite amount of empty data, then
+				// relocate data entry here. But be sure to move it
+				// far enough, so it wont get in the way of new
+				// metadatas. Also, be sure that the empty space
+				// between it and the last dataentry and the future
+				// data begin is either zero, or
+				// >= Nodes::Dataentry::HEADER_SIZE, so there can
+				// be empty space between them.
 				if (empty_bytes_after_de < 0) {
 					uint64_t moved_new_loc;
 					if (min_dataentry_loc > de_to_check_end) {
 						moved_new_loc = min_dataentry_loc;
 						size_t empty_after_last_de = moved_new_loc - de_to_check_end;
-						if (empty_after_last_de != 0 && empty_after_last_de < 8) {
-// TODO: Would it be possible to say: moved_new_loc += (8 - empty_after_last_de)
-							moved_new_loc += 8;
+						if (empty_after_last_de != 0 && empty_after_last_de < Nodes::Dataentry::HEADER_SIZE) {
+							moved_new_loc = de_to_check_end + Nodes::Dataentry::HEADER_SIZE;
 						}
 					} else {
 						moved_new_loc = de_to_check_end;
@@ -1484,11 +1483,11 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 					// If last de was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
-					uint64_t empty_b4_dest;
-					if (moved_de_loc == de_to_check_loc) empty_b4_dest = datasec_begin;
-					else empty_b4_dest = de_to_check_end;
-					HppAssert (moved_new_loc == empty_b4_dest || moved_new_loc >= empty_b4_dest + Nodes::Dataentry::HEADER_SIZE, "There won\'t be enough space before destination!");
-					moveData(moved_de_loc, moved_new_loc, datasec_begin, empty_b4_dest);
+					uint64_t empty_begin_dest;
+					if (moved_de_loc == de_to_check_loc) empty_begin_dest = datasec_begin;
+					else empty_begin_dest = de_to_check_end;
+					HppAssert (moved_new_loc == empty_begin_dest || moved_new_loc >= empty_begin_dest + Nodes::Dataentry::HEADER_SIZE, "There won\'t be enough space before destination!");
+					moveData(moved_de_loc, moved_new_loc, datasec_begin, empty_begin_dest);
 					HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
 					break;
 				}
@@ -1503,12 +1502,12 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 					// If last Dataentry was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
-					uint32_t empty_b4_dest;
-					if (moved_de_loc == de_to_check_loc) empty_b4_dest = datasec_begin;
-					else empty_b4_dest = de_to_check_end;
+					uint32_t empty_begin_dest;
+					if (moved_de_loc == de_to_check_loc) empty_begin_dest = datasec_begin;
+					else empty_begin_dest = de_to_check_end;
 					// Ensure there is enough space before destination
-					if (possible_new_loc == empty_b4_dest || possible_new_loc >= empty_b4_dest + Nodes::Dataentry::HEADER_SIZE) {
-						moveData(moved_de_loc, possible_new_loc, datasec_begin, empty_b4_dest);
+					if (possible_new_loc == empty_begin_dest || possible_new_loc >= empty_begin_dest + Nodes::Dataentry::HEADER_SIZE) {
+						moveData(moved_de_loc, possible_new_loc, datasec_begin, empty_begin_dest);
 						break;
 					}
 				}
@@ -1826,8 +1825,13 @@ size_t Archive::getSectionBegin(Section sec) const
 }
 
 void Archive::moveData(uint64_t src, uint64_t dest,
-                       uint32_t empty_b4_src, uint32_t empty_b4_dest)
+                       uint64_t empty_begin_src, uint64_t empty_begin_dest)
 {
+	HppAssert(src >= getSectionBegin(SECTION_DATA), "Source underflows!");
+	HppAssert(dest >= getSectionBegin(SECTION_DATA), "Destination underflows!");
+	HppAssert(empty_begin_src >= getSectionBegin(SECTION_DATA), "Empty before source underflows!");
+	HppAssert(empty_begin_dest >= getSectionBegin(SECTION_DATA), "Empty before destination underflows!");
+
 	if (src == dest) {
 		return;
 	}
@@ -1871,16 +1875,16 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	// Calculate size of empty that source will left
 	ssize_t empty_space_at_src = calculateAmountOfEmptySpace(src + Nodes::Dataentry::HEADER_SIZE + src_de.size);
 	if (empty_space_at_src >= 0) {
-		empty_space_at_src = src_de.size + Nodes::Dataentry::HEADER_SIZE + empty_space_at_src + (src - empty_b4_src);
+		empty_space_at_src = src_de.size + Nodes::Dataentry::HEADER_SIZE + empty_space_at_src + (src - empty_begin_src);
 	}
 
 	// Calculate sizes and position of empties that destination will left
-	size_t empty_space_before_dest = dest - empty_b4_dest;
+	size_t empty_space_before_dest = dest - empty_begin_dest;
 	ssize_t empty_space_after_dest;
-	if (empty_b4_src != empty_b4_dest) {
-		empty_space_after_dest = calculateAmountOfEmptySpace(empty_b4_dest);
+	if (empty_begin_src != empty_begin_dest) {
+		empty_space_after_dest = calculateAmountOfEmptySpace(empty_begin_dest);
 		if (empty_space_after_dest >= 0) {
-			ssize_t reduce = (dest - empty_b4_dest) + Nodes::Dataentry::HEADER_SIZE + src_de.size;
+			ssize_t reduce = (dest - empty_begin_dest) + Nodes::Dataentry::HEADER_SIZE + src_de.size;
 			HppAssert(empty_space_after_dest == reduce || empty_space_after_dest >= reduce + ssize_t(Nodes::Dataentry::HEADER_SIZE), "Invalid amount of empty!");
 			empty_space_after_dest -= reduce;
 		}
@@ -1899,13 +1903,13 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	writeMetadata(metadata, metadata_loc);
 
 	// Prepare clearing of src. Do not perform this, if src empty is same as dest empty
-	if (empty_b4_src != empty_b4_dest) {
+	if (empty_begin_src != empty_begin_dest) {
 		if (empty_space_at_src < 0) {
-			datasec_end = empty_b4_src;
+			datasec_end = empty_begin_src;
 		} else {
 			HppAssert(empty_space_at_src >= (ssize_t)Nodes::Dataentry::HEADER_SIZE, "Too little amount of empty data! Header does not fit!");
-			HppAssert(empty_b4_src + empty_space_at_src <= (ssize_t)datasec_end, "Overflow!");
-			writeEmpty(empty_b4_src, empty_space_at_src - Nodes::Dataentry::HEADER_SIZE, true);
+			HppAssert(empty_begin_src + empty_space_at_src <= (ssize_t)datasec_end, "Overflow!");
+			writeEmpty(empty_begin_src, empty_space_at_src - Nodes::Dataentry::HEADER_SIZE, true);
 		}
 	}
 
@@ -1913,7 +1917,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	if (empty_space_after_dest < 0) {
 		datasec_end = dest + Nodes::Dataentry::HEADER_SIZE + src_de.size;
 		writeData(dest, src_de.type, src_de.data, 0);
-		HppAssert(empty_b4_src == empty_b4_dest || empty_space_at_src >= 0, "Both empties try to write the data ending!");
+		HppAssert(empty_begin_src == empty_begin_dest || empty_space_at_src >= 0, "Both empties try to write the data ending!");
 	} else {
 		HppAssert(datasec_end > dest + Nodes::Dataentry::HEADER_SIZE + src_de.data.size() + empty_space_after_dest, "There should be more empty space!");
 		writeData(dest, src_de.type, src_de.data, empty_space_after_dest);
@@ -1921,9 +1925,9 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 
 	// Clear data before dest
 	if (empty_space_before_dest != 0) {
-		HppAssert(empty_b4_dest + empty_space_before_dest <= datasec_end, "Overflow!");
+		HppAssert(empty_begin_dest + empty_space_before_dest <= datasec_end, "Overflow!");
 		HppAssert(empty_space_before_dest >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
-		writeEmpty(empty_b4_dest, empty_space_before_dest - Nodes::Dataentry::HEADER_SIZE, false);
+		writeEmpty(empty_begin_dest, empty_space_before_dest - Nodes::Dataentry::HEADER_SIZE, false);
 	}
 
 	// If datasection end was changed, then write it too

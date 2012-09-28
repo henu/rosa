@@ -273,7 +273,7 @@ private:
 	// If there is no empty data before source/destination, then set
 	// them to same as source/destination.
 	void moveData(uint64_t src, uint64_t dest,
-	              uint32_t empty_b4_src, uint32_t empty_b4_dest);
+	              uint64_t empty_begin_src, uint64_t empty_begin_dest);
 
 	// Reads multiple files/folders/symlinks, converts them to Nodes
 	// in archive, and returns those new Nodes as Children of Folder.
