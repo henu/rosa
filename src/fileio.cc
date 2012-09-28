@@ -11,7 +11,6 @@
 #include <hpp/aes256ofbcipher.h>
 #include <hpp/random.h>
 #include <cstring>
-#include <iostream>
 
 #ifdef ENABLE_FILEIO_CACHE
 FileIO::FileIO(size_t writecache_max_size, size_t readcache_max_size) :
@@ -34,8 +33,10 @@ journal_exists(false)
 
 FileIO::~FileIO(void)
 {
-	if (!writecache.empty()) {
-		std::cerr << "WARNING: There are unflushed writes!" << std::endl;
+	if (writecache_state == WAITING_MORE_WITHOUT_JOURNAL) {
+		writeWritecacheToDisk(false);
+	} else if (writecache_state == WAITING_MORE_WITH_JOURNAL) {
+		writeWritecacheToDisk(true);
 	}
 
 	for (Readcache::iterator readcache_it = readcache.begin();
@@ -130,10 +131,32 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 
 void FileIO::initWrite(bool use_journal)
 {
-	HppAssert(writecache_state == NOT_INITIALIZED, "Writecache is already initialized!");
-	if (use_journal) {
+	HppAssert(writecache_state != INITIALIZED_WITHOUT_JOURNAL && writecache_state != INITIALIZED_WITH_JOURNAL, "Writecache is already initialized!");
+
+	// If we are not waiting for new writes, then just initialize normally
+	if (writecache_state == NOT_INITIALIZED) {
+		if (use_journal) {
+			writecache_state = INITIALIZED_WITH_JOURNAL;
+		} else {
+			writecache_state = INITIALIZED_WITHOUT_JOURNAL;
+		}
+	}
+	// If we are waiting for more writes, but without journal, and next
+	// writes use journal, then write pending stuff to disk first.
+	else if (writecache_state == WAITING_MORE_WITHOUT_JOURNAL && use_journal) {
+		writeWritecacheToDisk(false);
 		writecache_state = INITIALIZED_WITH_JOURNAL;
-	} else {
+	}
+	// If we are already waiting with journal,
+	// then keep using it with these writes too.
+	else if (writecache_state == WAITING_MORE_WITH_JOURNAL) {
+		writecache_state = INITIALIZED_WITH_JOURNAL;
+	}
+	// Otherwise we are not waiting with journal and
+	// do not want to use it with these writes either.
+	else {
+		HppAssert(writecache_state == WAITING_MORE_WITHOUT_JOURNAL, "Wrong state!");
+		HppAssert(!use_journal, "Wrong flag!");
 		writecache_state = INITIALIZED_WITHOUT_JOURNAL;
 	}
 }
@@ -144,7 +167,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 	Hpp::Profiler prof("FileIO::writeChunk");
 	#endif
 
-	HppAssert(writecache_state != NOT_INITIALIZED, "Writecache is not initialized!");
+	HppAssert(writecache_state == INITIALIZED_WITHOUT_JOURNAL || writecache_state == INITIALIZED_WITH_JOURNAL, "Writecache is not initialized!");
 
 	uint64_t end = offset + chunk.size();
 
@@ -177,6 +200,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 		if (writecache_find->first >= end) {
 			break;
 		}
+		writecache_total_size -= writecache_find->second.data.size();
 		writecache.erase(writecache_find);
 	}
 	while ((writecache_find = writecache.lower_bound(offset)) != writecache.begin()) {
@@ -184,6 +208,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 		if (writecache_find->first + writecache_find->second.data.size() <= offset) {
 			break;
 		}
+		writecache_total_size -= writecache_find->second.data.size();
 		writecache.erase(writecache_find);
 	}
 
@@ -192,15 +217,27 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 	new_chunk.encrypt = encrypt;
 	new_chunk.data = chunk;
 	writecache[offset] = new_chunk;
+	writecache_total_size += chunk.size();
 }
 
 void FileIO::flushWrites(void)
 {
-	HppAssert(writecache_state != NOT_INITIALIZED, "Writecache is not initialized!");
+	HppAssert(writecache_state == INITIALIZED_WITHOUT_JOURNAL || writecache_state == INITIALIZED_WITH_JOURNAL, "Writecache is not initialized!");
 
-	writeWritecacheToDisk(writecache_state == INITIALIZED_WITH_JOURNAL);
-
-	writecache_state = NOT_INITIALIZED;
+	// If size of writecache has exceeded its
+	// maximum limit, then write it immediately.
+	if (writecache_total_size > writecache_max_size) {
+		writeWritecacheToDisk(writecache_state == INITIALIZED_WITH_JOURNAL);
+		writecache_state = NOT_INITIALIZED;
+	}
+	// If limit is not exceeded, then it is good idea to wait
+	// for more writes, and then write all of them at once.
+	else if (writecache_state == INITIALIZED_WITHOUT_JOURNAL) {
+		writecache_state = WAITING_MORE_WITHOUT_JOURNAL;
+	} else {
+		HppAssert(writecache_state == INITIALIZED_WITH_JOURNAL, "Wrong state!");
+		writecache_state = WAITING_MORE_WITH_JOURNAL;
+	}
 }
 
 bool FileIO::finishPossibleInterruptedJournal(void)
@@ -365,8 +402,14 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 		uint64_t offset = writecache_it->first;
 		Writecachechunk const& chunk = writecache_it->second;
 		writeToDisk(offset, chunk.data, chunk.encrypt);
+		#ifndef NDEBUG
+		writecache_total_size -= chunk.data.size();
+		#endif
 	}
 	file.flush();
+	#ifndef NDEBUG
+	HppAssert(writecache_total_size == 0, "Writecache total size calculator has failed!");
+	#endif
 
 	// Finally clear journal flag
 	clearJournalFlag();
@@ -383,6 +426,7 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 	}
 	#endif
 	writecache.clear();
+	writecache_total_size = 0;
 }
 
 Hpp::ByteV FileIO::generateCryptoIV(size_t offset)

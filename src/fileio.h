@@ -76,7 +76,7 @@ private:
 		bool encrypt;
 	};
 	typedef std::map< uint64_t, Writecachechunk > Writecache;
-	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL };
+	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL, WAITING_MORE_WITHOUT_JOURNAL, WAITING_MORE_WITH_JOURNAL };
 
 	std::fstream file;
 
