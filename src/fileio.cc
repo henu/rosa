@@ -277,6 +277,9 @@ void FileIO::clearJournalFlag(void)
 
 void FileIO::ensureArchiveSize(size_t size)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("FileIO::ensureArchiveSize");
+	#endif
 	size_t const WRITE_BUF_SIZE = 128;
 	char write_buf[WRITE_BUF_SIZE];
 	#ifndef NDEBUG
