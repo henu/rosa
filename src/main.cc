@@ -12,6 +12,8 @@
 #include <iostream>
 #include <set>
 
+size_t stringToCachesize(std::string const& str);
+
 void run(int argc, char** argv)
 {
 	srand(time(NULL));
@@ -25,8 +27,12 @@ void run(int argc, char** argv)
 	args.addAlias("-p", "--password");
 	args.addArgument("--verbose", "", "Displays more information");
 	args.addAlias("-v", "--verbose");
-	args.addArgument("--level", "<LEVEL>", "Sets compression level");
+	args.addArgument("--level", "<LEVEL>", "Sets compression level. Valid options are: nothing, fast, default, best.");
 	args.addAlias("-l", "--level");
+	args.addArgument("--wcache", "<SIZE>", "Sets writecache size. Appropriate optional suffixes are k, M and G, for example 10M");
+	args.addAlias("-w", "--wcache");
+	args.addArgument("--rcache", "<SIZE>", "Sets readcache size. Appropriate optional suffixes are k, M and G, for example 10M");
+	args.addAlias("-r", "--rcache");
 
 	// Options
 	enum Action {
@@ -82,6 +88,30 @@ void run(int argc, char** argv)
 				throw Hpp::Exception("Invalid compression level! Valid options are: nothing, fast, default and best.");
 			}
 			useroptions.verbose = &std::cout;
+
+		} else if (arg == "--wcache") {
+
+			if (args.argsLeft() == 0) {
+				throw Hpp::Exception("Missing cache size!");
+			}
+			try {
+				useroptions.writecache_size = stringToCachesize(args.popArgument());
+			}
+			catch (Hpp::Exception const& e) {
+				throw Hpp::Exception("Unable to set write cache size! " + std::string(e.what()));
+			}
+
+		} else if (arg == "--rcache") {
+
+			if (args.argsLeft() == 0) {
+				throw Hpp::Exception("Missing cache size!");
+			}
+			try {
+				useroptions.readcache_size = stringToCachesize(args.popArgument());
+			}
+			catch (Hpp::Exception const& e) {
+				throw Hpp::Exception("Unable to set read cache size! " + std::string(e.what()));
+			}
 
 		} else {
 			extra_args.push_back(arg);
@@ -305,10 +335,16 @@ void run(int argc, char** argv)
 		std::cout << "\t\t" << argv[0] << " verify <ARCHIVE>" << std::endl;
 		std::cout << "\t\t" << argv[0] << " optimize <ARCHIVE>" << std::endl;
 		std::cout << "Global options:" << std::endl;
-		std::cout << "\t--verbose / -v" << std::endl;
-		std::cout << "\t\tPrints more output." << std::endl;
-		std::cout << "\t--level/ -l <LEVEL>" << std::endl;
-		std::cout << "\t\tSets compression level. Valid options are: nothing, fast, default, best." << std::endl;
+		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--verbose") << std::endl;
+		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--verbose") << std::endl;
+		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--password") << std::endl;
+		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--password") << std::endl;
+		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--level") << std::endl;
+		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--level") << std::endl;
+		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--wcache") << std::endl;
+		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--wcache") << std::endl;
+		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--rcache") << std::endl;
+		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--rcache") << std::endl;
 		return;
 	}
 
@@ -415,4 +451,22 @@ int main(int argc, char** argv)
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
+}
+
+size_t stringToCachesize(std::string const& str)
+{
+	if (str.empty()) {
+		throw Hpp::Exception("Empty string!");
+	}
+	size_t multiplier = 1;
+	if (str[str.size() - 1] == 'K' || str[str.size() - 1] == 'k') {
+		multiplier = 1024;
+	} else if (str[str.size() - 1] == 'M' || str[str.size() - 1] == 'm') {
+		multiplier = 1024*1024;
+	} else if (str[str.size() - 1] == 'G' || str[str.size() - 1] == 'g') {
+		multiplier = 1024*1024*1024;
+	} else {
+		return Hpp::strToSize(str);
+	}
+	return Hpp::strToSize(str.substr(0, str.size() - 1)) * multiplier;
 }
