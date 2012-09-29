@@ -834,6 +834,10 @@ void Archive::loadStateFromFile(std::string const& password)
 
 uint8_t Archive::findMetadataFromSearchtree(Nodes::Metadata* result_metadata, uint64_t* result_metadata_loc, Hpp::ByteV const& hash, uint64_t begin_loc)
 {
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("Archive::findMetadataFromSearchtree");
+	#endif
+
 	if (nodes_size == 0) {
 		return 3;
 	}
