@@ -6,7 +6,7 @@
 
 struct Useroptions
 {
-	static size_t const DEFAULT_WRITECACHE_SIZE = 64 * 1024 * 1024;
+	static size_t const DEFAULT_WRITECACHE_SIZE = 320 * 1024;
 	static size_t const DEFAULT_READCACHE_SIZE = 64 * 1024 * 1024;
 
 	std::ostream* verbose;
