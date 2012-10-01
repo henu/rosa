@@ -32,6 +32,15 @@ void Archiver::printDebugInformation(std::ostream* strm)
 	(*strm) << "Number of nodes: " << archive.getNumOfNodes() << std::endl;
 	(*strm) << "Begin of searchtree: " << archive.getBeginOfSearchtree() << std::endl;
 
+	Archive::SearchtreeDepthAnalysis stda = archive.getSearchtreeDepths();
+	(*strm) << "Searchtree depth analysis:";
+	for (Archive::SearchtreeDepthAnalysis::const_iterator stda_it = stda.begin();
+	     stda_it != stda.end();
+	     ++ stda_it) {
+		(*strm) << " " << stda_it->first << "/" << stda_it->second;
+	}
+	(*strm) << std::endl;
+
 	(*strm) << "End of data section: " << archive.getDataSectionEnd() << std::endl;
 
 	(*strm) << "Journal: ";

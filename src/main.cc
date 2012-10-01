@@ -423,8 +423,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_VERIFY) {
 		archiver.verify();
 	} else if (action == ACTION_OPTIMIZE) {
-// TODO: Code this!
-HppAssert(false, "Not implemented yet!");
+		archiver.optimize();
 	}
 
 }

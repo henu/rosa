@@ -19,6 +19,8 @@ class Archive
 
 public:
 
+	typedef std::map< uint16_t, uint64_t > SearchtreeDepthAnalysis;
+
 	Archive(Useroptions const& useroptions);
 
 	// Opens existing archive. If archive is password protected,
@@ -70,6 +72,11 @@ public:
 	inline bool getOrphanNodesFlag(void) const { return orphan_nodes_exists; }
 	Hpp::ByteV getNodeData(Hpp::ByteV const& node_hash);
 	inline bool pathExists(Hpp::Path const& path);
+
+	// Returns counts of different search tree depths. This can be used
+	// to analyse if search tree is optimal or not. Index in result
+	// tells depth and value tells how many nodes are in this depth.
+	SearchtreeDepthAnalysis getSearchtreeDepths(void);
 
 	// Verifier functions. Return false on error, or throw exception if
 	// requested. Note, that exception will be thrown anyway, if other
@@ -289,13 +296,15 @@ private:
 	                        Nodes::FsMetadata const& fsmetadata,
 	                        Hpp::Path const& target);
 
+	// Recursively analyses nodes of searchtree.
+	void analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t metadata_loc, uint16_t depth);
+
 	// Generates crypto key from password and salt
 	static Hpp::ByteV generateCryptoKey(std::string const& password, Hpp::ByteV const& salt);
 
 	// Factory functions from raw data
 	static Nodes::Node* spawnNodeFromDataAndType(Hpp::ByteV const& data, Nodes::Type type);
 	static Nodes::Node* spawnNodeFromDataentry(Nodes::Dataentry const& dataentry);
-
 
 };
 

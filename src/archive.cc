@@ -509,6 +509,15 @@ inline bool Archive::pathExists(Hpp::Path const& path)
 	return true;
 }
 
+Archive::SearchtreeDepthAnalysis Archive::getSearchtreeDepths(void)
+{
+	SearchtreeDepthAnalysis result;
+
+	analyseSearchtreeDepth(result, searchtree_begin, 0);
+
+	return result;
+}
+
 bool Archive::verifyDataentriesAreValid(bool throw_exception)
 {
 	size_t check_loc = getSectionBegin(SECTION_DATA);
@@ -643,6 +652,10 @@ bool Archive::verifyReferences(bool throw_exception)
 
 bool Archive::verifyMetadatas(bool throw_exception)
 {
+	if (nodes_size == 0) {
+		return true;
+	}
+
 	size_t datasec_begin = getSectionBegin(SECTION_DATA);
 
 	for (size_t metadata_loc = 0;
@@ -717,6 +730,36 @@ bool Archive::verifyMetadatas(bool throw_exception)
 			}
 			return false;
 		}
+	}
+
+	// Verify all metadatas are in the search tree
+	size_t metadatas_met = 0;
+	std::list< Nodes::Metadata > stack;
+	stack.push_back(getNodeMetadata(searchtree_begin));
+	while (!stack.empty()) {
+		if (stack.back().child_small != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata new_check = getNodeMetadata(stack.back().child_small);
+			stack.back().child_small = Nodes::Metadata::NULL_REF;
+			stack.push_back(new_check);
+		} else if (stack.back().child_big != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata new_check = getNodeMetadata(stack.back().child_big);
+			stack.back().child_big = Nodes::Metadata::NULL_REF;
+			stack.push_back(new_check);
+		} else {
+			++ metadatas_met;
+			stack.pop_back();
+		}
+	}
+	if (metadatas_met < nodes_size) {
+		if (throw_exception) {
+			throw Hpp::Exception("There are some metadata nodes that are not reachable from the searchtree!");
+		}
+		return false;
+	} else if (metadatas_met > nodes_size) {
+		if (throw_exception) {
+			throw Hpp::Exception("There are more metadatas reachable from the searchtree than should be!");
+		}
+		return false;
 	}
 
 	return true;
@@ -1197,6 +1240,7 @@ void Archive::writeSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs)
 
 void Archive::writeMetadata(Nodes::Metadata const& meta, size_t metadata_loc)
 {
+	HppAssert(metadata_loc != Nodes::Metadata::NULL_REF, "Trying to write metadata to NULL_REF!");
 	HppAssert(meta.parent != metadata_loc, "Trying to write metadata that has itself as parent!");
 	HppAssert(meta.child_small != metadata_loc, "Trying to write metadata that has itself as smaller child!");
 	HppAssert(meta.child_big != metadata_loc, "Trying to write metadata that has itself as bigger child!");
@@ -2151,6 +2195,24 @@ HppAssert(false, "Extracting of symlink not implemented yet!");
 		throw Hpp::Exception("Trying to extract node that has invalid type!");
 	}
 
+}
+
+void Archive::analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t metadata_loc, uint16_t depth)
+{
+	SearchtreeDepthAnalysis::iterator result_find = result.find(depth);
+	if (result_find == result.end()) {
+		result[depth] = 1;
+	} else {
+		++ result_find->second;
+	}
+
+	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+	if (metadata.child_small != Nodes::Metadata::NULL_REF) {
+		analyseSearchtreeDepth(result, metadata.child_small, depth + 1);
+	}
+	if (metadata.child_big != Nodes::Metadata::NULL_REF) {
+		analyseSearchtreeDepth(result, metadata.child_big, depth + 1);
+	}
 }
 
 Hpp::ByteV Archive::generateCryptoKey(std::string const& password, Hpp::ByteV const& salt)
