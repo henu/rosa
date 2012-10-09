@@ -1054,6 +1054,77 @@ Nodes::Folders Archive::getFoldersToPath(Hpp::ByteV const& root, Hpp::Path const
 	return result;
 }
 
+size_t Archive::findEmptyData(size_t size, ssize_t prevent_results_before)
+{
+	#ifdef ENABLE_PROFILER
+	Hpp::Profiler prof("Archive::findEmptyData");
+	#endif
+
+	size_t const TRIES = 100;
+
+	// If there are any nodes, then search empty data among them first.
+	if (nodes_size > 0) {
+		// First pick random metadata. The position of its data is
+		// used as a starting position for seeking an empty space.
+		size_t metadata_loc = Hpp::randomInt(0, nodes_size - 1);
+
+		size_t search = getNodeMetadata(metadata_loc).data_loc;
+		Nodes::Dataentry de = getDataentry(search, false);
+		search += Nodes::Dataentry::HEADER_SIZE + de.size;
+
+		size_t tries_left = TRIES;
+		while (tries_left > 0) {
+			-- tries_left;
+
+			// Calculate how much there is empty space here
+			ssize_t empty_here = calculateAmountOfEmptySpace(search);
+
+			// If we are at the end of data, then leave this loop.
+			// There is special routine for this case after it.
+			if (empty_here < 0) {
+				break;
+			}
+
+			if (empty_here < ssize_t(size)) {
+				// There was not enough space
+			} else if (empty_here - size != 0 && empty_here - size < Nodes::Dataentry::HEADER_SIZE) {
+				// There would not be enough empty
+				// space after this result.
+			} else if (ssize_t(search) < prevent_results_before) {
+				// This result would be at the protected area
+			} else if (search - prevent_results_before != 0 && search - prevent_results_before < Nodes::Dataentry::HEADER_SIZE) {
+				// This result would be at the protected area
+			} else {
+				// This is valid result!
+				return search;
+			}
+
+			// Read next dataentry
+			search += empty_here;
+			de = getDataentry(search, false);
+			search += Nodes::Dataentry::HEADER_SIZE + de.size;
+
+		}
+
+	}
+
+	// Choose end of data, but remember to check possible protected begin.
+	size_t result = datasec_end;
+	// Check if beginning needs to be protected
+	if (prevent_results_before >= 0) {
+		if (ssize_t(result) < prevent_results_before) {
+			result = prevent_results_before;
+		} else if (result - prevent_results_before != 0 && result - prevent_results_before < Nodes::Dataentry::HEADER_SIZE) {
+			result = prevent_results_before + Nodes::Dataentry::HEADER_SIZE;
+		}
+		if (result > datasec_end && result - datasec_end < Nodes::Dataentry::HEADER_SIZE) {
+			result = datasec_end + Nodes::Dataentry::HEADER_SIZE;
+		}
+	}
+	return result;
+
+}
+
 Hpp::ByteV Archive::doRemoving(Hpp::ByteV const& root, Hpp::Path const& path)
 {
 // TODO: Output something!
@@ -1281,7 +1352,7 @@ void Archive::writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data
 
 void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry)
 {
-	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + size, "Trying to write empty after datasection!");
+	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + size <= datasec_end, "Trying to write empty after datasection!");
 
 	if (try_to_join_to_next_dataentry) {
 		// Check if entry after this one is empty too. If so, then merge them
@@ -1501,6 +1572,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 			}
 
 			// Loop until space is found
+// TODO: Make this to use findEmptyData()!
 			uint64_t de_to_check_loc = moved_de_loc;
 			uint64_t de_to_check_end = de_to_check_loc + Nodes::Dataentry::HEADER_SIZE + moved_de.size;
 			while (true) {
@@ -1616,6 +1688,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	}
 
 	// Make space for metadata
+// TODO: Would it be a good idea to reserve the space for data here too?
 	ensureEmptyDataentryAtBeginning(Nodes::Metadata::ENTRY_SIZE);
 	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
 
@@ -1645,56 +1718,26 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	data_compressed += compressor.read();
 	data_compressed += compressor.deinit();
 
-	// Fake amount of nodes so data will not be written over the reserved space
-	++ nodes_size;
-
-	// Find space for data of Node
-	#ifdef ENABLE_PROFILER
-	prof.changeTask("Archive::spawnOrGetNode / Find space for data");
-	#endif
-	size_t dataspace_begin = getSectionBegin(SECTION_DATA);
-	size_t dataspace_seek = dataspace_begin;
-	size_t dataspace_size = 0;
-	bool dataspace_size_infinite = false;
-	if (datasec_end < dataspace_seek) {
-		throw Hpp::Exception("Datasection cannot have negative length!");
-	}
-	while (true) {
-		// If there is not even header, then it
-		// means infinite amount of free data.
-		if (dataspace_seek == datasec_end) {
-			dataspace_size_infinite = true;
-			break;
-		}
-		// Read and parse header
-		Nodes::Dataentry de = getDataentry(dataspace_seek, false);
-
-		dataspace_seek += Nodes::Dataentry::HEADER_SIZE + de.size;
-
-		// If this entry is empty, then
-		// add it to amount of empty data
-		if (de.empty) {
-			dataspace_size += Nodes::Dataentry::HEADER_SIZE + de.size;
-			// Check if there is now enough data
-			if (dataspace_size >= 2 * Nodes::Dataentry::HEADER_SIZE + data_compressed.size()) {
-				break;
-			}
-		}
-		// If it's not empty, then start all over again.
-		else {
-			dataspace_begin = dataspace_seek;
-			dataspace_size = 0;
-		}
-
-	}
+	// Find space for data of Node. Prevent result from being from
+	// the beginning, where we have space reserved for metadata.
+	size_t dataspace_begin = findEmptyData(data_compressed.size() + Nodes::Dataentry::HEADER_SIZE, getSectionBegin(SECTION_DATA) + Nodes::Metadata::ENTRY_SIZE);
+	ssize_t dataspace_size = calculateAmountOfEmptySpace(dataspace_begin);
 
 	uint64_t original_datasec_end = datasec_end;
+
+	// If result was beyond data section, then increase datasection with empty data.
+	if (dataspace_begin > datasec_end) {
+		HppAssert(dataspace_begin - datasec_end >= Nodes::Dataentry::HEADER_SIZE, "Not enough space between result and end of datasection!");
+		size_t old_datasec_end = datasec_end;
+		datasec_end = dataspace_begin;
+		writeEmpty(old_datasec_end, dataspace_begin - datasec_end - Nodes::Dataentry::HEADER_SIZE, false);
+	}
 
 	// Prepare to write data of node
 	#ifdef ENABLE_PROFILER
 	prof.changeTask("Archive::spawnOrGetNode / Write");
 	#endif
-	if (dataspace_size_infinite) {
+	if (dataspace_size < 0) {
 		datasec_end = dataspace_begin + Nodes::Dataentry::HEADER_SIZE + data_compressed.size();
 		writeData(dataspace_begin, node->getType(), data_compressed, 0);
 	} else {
@@ -1702,6 +1745,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 		writeData(dataspace_begin, node->getType(), data_compressed, dataspace_size - data_compressed.size() - Nodes::Dataentry::HEADER_SIZE);
 	}
 	// Prepare to write metadata of node
+	++ nodes_size;
 	uint64_t new_metadata_loc = nodes_size - 1;
 	Nodes::Metadata meta;
 	meta.hash = hash;

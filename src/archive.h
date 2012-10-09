@@ -183,6 +183,21 @@ private:
 	// (root_ref), or some custom root during an atomic action.
 	Nodes::Folders getFoldersToPath(Hpp::ByteV const& root, Hpp::Path const& path);
 
+	// Finds specific sized or bigger empty space from the dataentries.
+	// Starts seeking from random location, but if no space is found
+	// quickly enough, then space is got from the end of whole datasection. Size does not include header,
+	// so if you want to store N bytes, you need to find N + HEADER_SIZE
+	// bytes of empty space. This function ensures that empty space after
+	// the returned position and size is either zero, or HEADER_SIZE or
+	// more. It is possible to prevent results before specific location.
+	// This ensures that result is either equal to prevent_results_before,
+	// or exactly HEADER_SIZE or more bigger than it. Because of this
+	// protection, this function might return results that are bigger than
+	// end of data section, but in these cases, it is always at least
+	// HEADER_SIZE bigger. In other cases, result is always beginning of
+	// some empty space, not from middle of it.
+	size_t findEmptyData(size_t size, ssize_t prevent_results_before = -1);
+
 
 	// ----------------------------------------
 	// Higher level modification functions
@@ -242,7 +257,7 @@ private:
 	void writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after);
 
 	// Writes header + size bytes. You must set try_to_join_to_next_dataentry
-	// to false, if there is no real data entry after this, becuase otherwise
+	// to false, if there is no real data entry after this, because otherwise
 	// it gets corrupted data.
 	void writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
 
