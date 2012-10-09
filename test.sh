@@ -24,7 +24,10 @@ verifyArchive() {
 
 echo "Compiling"
 make clean
+cp Makefile Makefile.ORIGINAL
+sed -i 's/-DNDEBUG/-Wall -Wpointer-arith -Werror -ansi -pedantic/g' Makefile
 make
+mv Makefile.ORIGINAL Makefile
 
 echo "Obtaining test data"
 rm -rf testdata
