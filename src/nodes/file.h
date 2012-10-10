@@ -24,6 +24,7 @@ public:
 
 	File(void);
 	File(Hpp::ByteV const& serialized);
+	virtual inline ~File(void) { }
 
 	// Adds datablock using its hash
 	void addDatablock(Hpp::ByteV const& hash, uint32_t size);

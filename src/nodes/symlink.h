@@ -16,6 +16,7 @@ public:
 	Symlink(void);
 	Symlink(Hpp::Path const& path);
 	Symlink(Hpp::ByteV const& serialized);
+	virtual inline ~Symlink(void) { }
 
 private:
 

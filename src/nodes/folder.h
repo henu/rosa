@@ -26,6 +26,7 @@ public:
 
 	Folder(void);
 	Folder(Hpp::ByteV const& serialized);
+	virtual inline ~Folder(void) { }
 
 	// Child modifiers. addChildren will not remove old ones,
 	// but it will replace them, if same names are given.

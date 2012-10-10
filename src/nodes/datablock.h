@@ -17,6 +17,7 @@ public:
 	// This constructor is used both when constructed from
 	// source file and when serialized from archive.
 	Datablock(Hpp::ByteV const& serialized);
+	virtual inline ~Datablock(void) { }
 
 private:
 

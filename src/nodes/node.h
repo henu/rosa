@@ -14,6 +14,8 @@ class Node
 
 public:
 
+	virtual inline ~Node(void) { }
+
 	Hpp::ByteV getData(void);
 	Hpp::ByteV getHash(void);
 
