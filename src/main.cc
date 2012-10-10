@@ -421,7 +421,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation(&std::cout);
 	} else if (action == ACTION_VERIFY) {
-		archiver.verify();
+		archiver.verify(useroptions);
 	} else if (action == ACTION_OPTIMIZE) {
 		archiver.optimize();
 	}

@@ -36,7 +36,7 @@ public:
 	void optimize(void);
 
 	// Verfies everything is okay
-	void verify(void);
+	void verify(Useroptions const& useroptions);
 
 private:
 
