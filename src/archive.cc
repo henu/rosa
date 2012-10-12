@@ -662,10 +662,24 @@ bool Archive::verifyMetadatas(bool throw_exception)
 	     metadata_loc < nodes_size;
 	     ++ metadata_loc) {
 		Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
-		// Ensure data section does not underflow
+		// Ensure dataentry does not underflow
 		if (metadata.data_loc < datasec_begin) {
 			if (throw_exception) {
-				throw Hpp::Exception("Data section underflow for Metadata #" + Hpp::sizeToStr(metadata_loc) + "!");
+				throw Hpp::Exception("Dataentry underflow for Metadata #" + Hpp::sizeToStr(metadata_loc) + "!");
+			}
+			return false;
+		}
+		// Ensure dataentry does not overflow
+		if (metadata.data_loc + Nodes::Dataentry::HEADER_SIZE > datasec_end) {
+			if (throw_exception) {
+				throw Hpp::Exception("Dataentry header overflows for Metadata #" + Hpp::sizeToStr(metadata_loc) + "!");
+			}
+			return false;
+		}
+		Nodes::Dataentry de = getDataentry(metadata.data_loc, false);
+		if (metadata.data_loc + Nodes::Dataentry::HEADER_SIZE + uint64_t(de.size) > datasec_end) {
+			if (throw_exception) {
+				throw Hpp::Exception("Dataentry overflows for Metadata #" + Hpp::sizeToStr(metadata_loc) + "!");
 			}
 			return false;
 		}
@@ -1006,7 +1020,7 @@ Hpp::ByteV Archive::getNodeData(Nodes::Metadata const& metadata)
 
 ssize_t Archive::calculateAmountOfEmptySpace(uint64_t loc)
 {
-	size_t empty_space = 0;
+	uint64_t empty_space = 0;
 	while (true) {
 
 		if (loc == datasec_end) {
@@ -1068,7 +1082,7 @@ size_t Archive::findEmptyData(size_t size, ssize_t prevent_results_before)
 		// used as a starting position for seeking an empty space.
 		size_t metadata_loc = Hpp::randomInt(0, nodes_size - 1);
 
-		size_t search = getNodeMetadata(metadata_loc).data_loc;
+		uint64_t search = getNodeMetadata(metadata_loc).data_loc;
 		Nodes::Dataentry de = getDataentry(search, false);
 		search += Nodes::Dataentry::HEADER_SIZE + de.size;
 
@@ -1356,7 +1370,7 @@ void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next
 
 	if (try_to_join_to_next_dataentry) {
 		// Check if entry after this one is empty too. If so, then merge them
-		size_t check_loc = begin + Nodes::Dataentry::HEADER_SIZE + size;
+		uint64_t check_loc = begin + Nodes::Dataentry::HEADER_SIZE + size;
 		while (check_loc != datasec_end) {
 			HppAssert(check_loc < datasec_end, "Empty data entry overflows data section!");
 			Nodes::Dataentry de_check = getDataentry(check_loc, false);
@@ -1622,7 +1636,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 					// If last Dataentry was the one being moved,
 					// then empty before dest needs to be
 					// calculated from begin of data section.
-					uint32_t empty_begin_dest;
+					uint64_t empty_begin_dest;
 					if (moved_de_loc == de_to_check_loc) empty_begin_dest = datasec_begin;
 					else empty_begin_dest = de_to_check_end;
 					// Ensure there is enough space before destination
@@ -1938,6 +1952,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	uint64_t original_datasec_end = datasec_end;
 
 	io.initWrite(true);
+// TODO: Would it be good idea to rewrite this?
 
 	// Calculate hash of this data. It needs to be extracted first.
 	Hpp::ByteV data_ext;

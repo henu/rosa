@@ -11,7 +11,7 @@ namespace Nodes
 
 struct Dataentry
 {
-	static size_t const HEADER_SIZE = 4;
+	static uint64_t const HEADER_SIZE = 4;
 
 	static uint32_t const MASK_DATASIZE = 0x1fffffff;
 	static uint32_t const MASK_TYPE = 0x60000000;
