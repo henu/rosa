@@ -206,8 +206,6 @@ void run(int argc, char** argv)
 		// Verify number of arguments
 		if (extra_args.size() == 1) {
 			throw Hpp::Exception("Archive file and target(s) are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Target(s) are missing!");
 		}
 		// Read arguments
 		archive = Hpp::Path(extra_args[1]);
@@ -215,6 +213,10 @@ void run(int argc, char** argv)
 		     arg_id < extra_args.size();
 		     ++ arg_id) {
 			targets.push_back(Hpp::Path(extra_args[arg_id]));
+		}
+		// If no targets are given, then use default (root)
+		if (targets.empty()) {
+			targets.push_back(Hpp::Path("/"));
 		}
 	} else if (extra_args[0] == "mkdir") {
 		action = ACTION_MKDIR;
@@ -393,6 +395,9 @@ HppAssert(false, "Not implemented yet!");
 		     ++ targets_it) {
 			Hpp::Path const& target = *targets_it;
 			archiver.list(target, &std::cout);
+			if (targets.end() - targets_it > 1) {
+				std::cout << std::endl;
+			}
 		}
 	} else if (action == ACTION_MKDIR) {
 		archiver.createNewFolders(targets, fsmetadata);
