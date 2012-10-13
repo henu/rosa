@@ -319,34 +319,26 @@ void run(int argc, char** argv)
 	}
 
 	if (action == ACTION_NOTHING) {
+		std::string program_name = argv[0];
 		std::cout << "Usage:" << std::endl;
 		std::cout << "\tSnapshot way:" << std::endl;
-		std::cout << "\t\t" << argv[0] << " snapshot <ARCHIVE> <SNAPSHOT> <SOURCE_1> [SOURCE_2 ... SOURCE_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " destroy <ARCHIVE> <SNAPSHOT>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " rename <ARCHIVE> <SNAPSHOT_OLDNAME> <SNAPSHOT_NEWNAME>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " restore <ARCHIVE> <SNAPSHOT> [TARGET]" << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " snapshot <ARCHIVE> <SNAPSHOT> <SOURCE_1> [SOURCE_2 ... SOURCE_N]", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " destroy <ARCHIVE> <SNAPSHOT>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " rename <ARCHIVE> <SNAPSHOT_OLDNAME> <SNAPSHOT_NEWNAME>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " restore <ARCHIVE> <SNAPSHOT> [TARGET]", "\t\t") << std::endl;
 		std::cout << "\tBasic way:" << std::endl;
-		std::cout << "\t\t" << argv[0] << " put <ARCHIVE> <SOURCE_1> [SOURCE_2 ... SOURCE_N] <TARGET>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " get <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " mv/move <ARCHIVE> <PATH_FROM> <PATH_TO>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " ls/list <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " mkdir <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]" << std::endl;
-		std::cout << "\t\t" << argv[0] << " rm/remove <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]" << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " put <ARCHIVE> <SOURCE_1> [SOURCE_2 ... SOURCE_N] <TARGET>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " get <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " mv/move <ARCHIVE> <PATH_FROM> <PATH_TO>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " ls/list <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " mkdir <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " rm/remove <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]", "\t\t") << std::endl;
 		std::cout << "\tExtra commands:" << std::endl;
-		std::cout << "\t\t" << argv[0] << " debug <ARCHIVE>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " verify <ARCHIVE>" << std::endl;
-		std::cout << "\t\t" << argv[0] << " optimize <ARCHIVE>" << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " debug <ARCHIVE>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " verify <ARCHIVE>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " optimize <ARCHIVE>", "\t\t") << std::endl;
 		std::cout << "Global options:" << std::endl;
-		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--verbose") << std::endl;
-		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--verbose") << std::endl;
-		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--password") << std::endl;
-		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--password") << std::endl;
-		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--level") << std::endl;
-		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--level") << std::endl;
-		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--wcache") << std::endl;
-		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--wcache") << std::endl;
-		std::cout << "\t" << args.getHelp(Hpp::Arguments::INC_ALL_BUT_DESC, "--rcache") << std::endl;
-		std::cout << "\t\t" << args.getHelp(Hpp::Arguments::INC_DESC, "--rcache") << std::endl;
+		std::cout << args.getHelp(Hpp::Arguments::INC_ALL, "", "\t") << std::endl;
 		return;
 	}
 
