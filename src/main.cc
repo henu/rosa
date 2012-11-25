@@ -51,7 +51,6 @@ void run(int argc, char** argv)
 		ACTION_VERIFY,
 		ACTION_OPTIMIZE
 	};
-	std::vector< std::string > extra_args;
 	std::string password;
 	Action action = ACTION_NOTHING;
 	Useroptions useroptions;
@@ -113,8 +112,6 @@ void run(int argc, char** argv)
 				throw Hpp::Exception("Unable to set read cache size! " + std::string(e.what()));
 			}
 
-		} else {
-			extra_args.push_back(arg);
 		}
 	}
 
@@ -130,192 +127,206 @@ void run(int argc, char** argv)
 	fsmetadata.readFromCurrentEnvironment();
 // TODO: Make it possible to give custom metadata!
 
-	if (extra_args.empty()) {
+	if (args.extraargsLeft() == 0) {
 		action = ACTION_NOTHING;
-	} else if (extra_args[0] == "put") {
-		action = ACTION_PUT;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file, source(s) and target are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Source(s) and target are missing!");
-		} else if (extra_args.size() == 3) {
-			throw Hpp::Exception("Target is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size() - 1;
-		     ++ arg_id) {
-			sources.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-		targets.push_back(Hpp::Path(extra_args.back()));
-	} else if (extra_args[0] == "get") {
-		action = ACTION_GET;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file, source(s) and target are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Source(s) and target are missing!");
-		} else if (extra_args.size() == 3) {
-			throw Hpp::Exception("Target is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size() - 1;
-		     ++ arg_id) {
-			sources.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-		targets.push_back(Hpp::Path(extra_args.back()));
-	} else if (extra_args[0] == "rm" || extra_args[0] == "remove") {
-		action = ACTION_REMOVE;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file and target(s) are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Target(s) are missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size();
-		     ++ arg_id) {
-			targets.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-	} else if (extra_args[0] == "mv" || extra_args[0] == "move") {
-		action = ACTION_REMOVE;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file, source(s) and target are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Source(s) and target are missing!");
-		} else if (extra_args.size() == 3) {
-			throw Hpp::Exception("Target is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size() - 1;
-		     ++ arg_id) {
-			sources.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-		targets.push_back(Hpp::Path(extra_args.back()));
-	} else if (extra_args[0] == "ls" || extra_args[0] == "list") {
-		action = ACTION_LIST;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file and target(s) are missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size();
-		     ++ arg_id) {
-			targets.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-		// If no targets are given, then use default (root)
-		if (targets.empty()) {
-			targets.push_back(Hpp::Path("/"));
-		}
-	} else if (extra_args[0] == "mkdir") {
-		action = ACTION_MKDIR;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file and target(s) are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Target(s) are missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		for (size_t arg_id = 2;
-		     arg_id < extra_args.size();
-		     ++ arg_id) {
-			targets.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-	} else if (extra_args[0] == "snapshot") {
-		action = ACTION_SNAPSHOT;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file, snapshot and source(s) are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Snapshot and source(s) are missing!");
-		} else if (extra_args.size() == 3) {
-			throw Hpp::Exception("Source(s) are missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		snapshot = extra_args[2];
-		for (size_t arg_id = 3;
-		     arg_id < extra_args.size();
-		     ++ arg_id) {
-			sources.push_back(Hpp::Path(extra_args[arg_id]));
-		}
-	} else if (extra_args[0] == "destroy") {
-		action = ACTION_DESTROY;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file and snapshot are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Snapshot is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		snapshot = extra_args[2];
-	} else if (extra_args[0] == "rename") {
-		action = ACTION_RENAME;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file, snapshot and its new name are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Snapshot and its new name are missing!");
-		} else if (extra_args.size() == 3) {
-			throw Hpp::Exception("New name of snapshot is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		snapshot = extra_args[2];
-		snapshot_new = extra_args[3];
-	} else if (extra_args[0] == "restore") {
-		action = ACTION_RESTORE;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file and snapshot are missing!");
-		} else if (extra_args.size() == 2) {
-			throw Hpp::Exception("Snapshot is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-		snapshot = extra_args[2];
-		if (extra_args.size() > 3) {
-			targets.push_back(Hpp::Path(extra_args[3]));
-		}
-	} else if (extra_args[0] == "debug") {
-		action = ACTION_DEBUG;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-	} else if (extra_args[0] == "verify") {
-		action = ACTION_VERIFY;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
-	} else if (extra_args[0] == "optimize") {
-		action = ACTION_OPTIMIZE;
-		// Verify number of arguments
-		if (extra_args.size() == 1) {
-			throw Hpp::Exception("Archive file is missing!");
-		}
-		// Read arguments
-		archive = Hpp::Path(extra_args[1]);
 	} else {
-		throw Hpp::Exception("Unknown command \"" + extra_args[0] + "\"!");
+		std::string earg_action = args.popExtraargument();
+		if (earg_action == "put") {
+			action = ACTION_PUT;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file, source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 2) {
+				throw Hpp::Exception("Target is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 1) {
+				sources.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			targets.push_back(Hpp::Path(args.popExtraargument()));
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "get") {
+			action = ACTION_GET;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file, source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 2) {
+				throw Hpp::Exception("Target is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 1) {
+				sources.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			targets.push_back(Hpp::Path(args.popExtraargument()));
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "rm" || earg_action == "remove") {
+			action = ACTION_REMOVE;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file and target(s) are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Target(s) are missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 0) {
+				targets.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "mv" || earg_action == "move") {
+			action = ACTION_REMOVE;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file, source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Source(s) and target are missing!");
+			} else if (args.extraargsLeft() == 2) {
+				throw Hpp::Exception("Target is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 1) {
+				sources.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			targets.push_back(Hpp::Path(args.popExtraargument()));
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "ls" || earg_action == "list") {
+			action = ACTION_LIST;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file and target(s) are missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 0) {
+				targets.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			// If no targets are given, then use default (root)
+			if (targets.empty()) {
+				targets.push_back(Hpp::Path("/"));
+			}
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "mkdir") {
+			action = ACTION_MKDIR;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file and target(s) are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Target(s) are missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			while (args.extraargsLeft() > 0) {
+				targets.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "snapshot") {
+			action = ACTION_SNAPSHOT;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file, snapshot and source(s) are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Snapshot and source(s) are missing!");
+			} else if (args.extraargsLeft() == 2) {
+				throw Hpp::Exception("Source(s) are missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			snapshot = args.popExtraargument();
+			while (args.extraargsLeft() > 0) {
+				sources.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			HppAssert(args.extraargsLeft() == 0, "Some arguments were not parsed!");
+		} else if (earg_action == "destroy") {
+			action = ACTION_DESTROY;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file and snapshot are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Snapshot is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			snapshot = args.popExtraargument();
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else if (earg_action == "rename") {
+			action = ACTION_RENAME;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file, snapshot and its new name are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Snapshot and its new name are missing!");
+			} else if (args.extraargsLeft() == 2) {
+				throw Hpp::Exception("New name of snapshot is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			snapshot = args.popExtraargument();
+			snapshot_new = args.popExtraargument();
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else if (earg_action == "restore") {
+			action = ACTION_RESTORE;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file and snapshot are missing!");
+			} else if (args.extraargsLeft() == 1) {
+				throw Hpp::Exception("Snapshot is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			snapshot = args.popExtraargument();
+			if (args.extraargsLeft() > 0) {
+				targets.push_back(Hpp::Path(args.popExtraargument()));
+			}
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else if (earg_action == "debug") {
+			action = ACTION_DEBUG;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else if (earg_action == "verify") {
+			action = ACTION_VERIFY;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else if (earg_action == "optimize") {
+			action = ACTION_OPTIMIZE;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
+		} else {
+			throw Hpp::Exception("Unknown command \"" + earg_action + "\"!");
+		}
 	}
 
 	if (action == ACTION_NOTHING) {
