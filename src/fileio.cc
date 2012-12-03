@@ -247,7 +247,8 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 	}
 
 	// Read serialized journal
-	uint64_t journal_loc = getJournalInfoLocation();
+	uint64_t journal_info_loc = getJournalInfoLocation();
+	uint64_t journal_loc = Hpp::cStrToUInt64(&readPart(journal_info_loc, 8)[0]);
 	uint64_t journal_srz_size = Hpp::cStrToUInt64(&readPart(journal_loc, 8)[0]);
 	Hpp::ByteV journal_srz = readPart(journal_loc + 8, journal_srz_size);
 
