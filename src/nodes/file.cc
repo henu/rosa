@@ -16,7 +16,18 @@ File::File(Hpp::ByteV const& serialized)
 {
 	Hpp::ByteV::const_iterator serialized_it = serialized.begin();
 
-	uint32_t datablocks_size = Hpp::deserializeUInt32(serialized_it, serialized.end());
+	uint32_t datablocks_size;
+
+	// Check if old or new method should be used when deserializing this
+	if (serialized.size() % (NODE_HASH_SIZE + 4) == 0) {
+		datablocks_size = serialized.size() / (NODE_HASH_SIZE + 4);
+	} else {
+		datablocks_size = Hpp::deserializeUInt32(serialized_it, serialized.end());
+		if (datablocks_size != (serialized.size() - 4) / (NODE_HASH_SIZE + 4)) {
+			throw Hpp::Exception("File node is corrupted!");
+		}
+	}
+
 	datablocks.reserve(datablocks_size);
 	uint64_t last_datablock_end = 0;
 	while (datablocks.size() < datablocks_size) {
@@ -46,7 +57,6 @@ void File::addDatablock(Hpp::ByteV const& hash, uint32_t size)
 
 void File::serialize(Hpp::ByteV& result) const
 {
-	result += Hpp::uInt32ToByteV(datablocks.size());
 	for (Datablocks::const_iterator datablocks_it = datablocks.begin();
 	     datablocks_it != datablocks.end();
 	     ++ datablocks_it) {
