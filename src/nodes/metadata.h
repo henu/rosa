@@ -42,6 +42,7 @@ struct Metadata
 		HppAssert(serialized.size() == ENTRY_SIZE, "Invalid serialized size!");
 
 		hash.insert(hash.end(), serialized.begin(), serialized.begin() + NODE_HASH_SIZE);
+// TODO: Would it be a good idea to use 4 bytes? With 3 bytes, for example only 16 million empty directories/files are supported!
 		refs = Hpp::cStrToUInt(&serialized[NODE_HASH_SIZE], 3);
 
 		parent = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 3]);

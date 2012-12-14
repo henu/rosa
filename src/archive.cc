@@ -2276,6 +2276,7 @@ void Archive::analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t m
 
 Hpp::ByteV Archive::generateCryptoKey(std::string const& password, Hpp::ByteV const& salt)
 {
+// TODO: It would be a good idea to get hash only from password, and then use it to hash or crypt salt. That way it is possible to give password hash from commandline! On the other hand, that needs to be done without salt, and is a security risk too!
 	Hpp::Sha256Hasher hasher;
 	hasher.addData(password);
 	hasher.addData(salt);
