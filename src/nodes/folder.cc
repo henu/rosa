@@ -14,26 +14,39 @@ Folder::Folder(void)
 
 Folder::Folder(Hpp::ByteV const& serialized)
 {
-	Hpp::ByteV::const_iterator serialized_it = serialized.begin();
-
-	try {
-		size_t children_size = Hpp::deserializeUInt32(serialized_it, serialized.end());
-		while (children.size() < children_size) {
-			Child new_child;
-			std::string child_name = Hpp::deserializeString(serialized_it, serialized.end(), 2);
-			new_child.type = (FsType)(Hpp::deserializeUInt8(serialized_it, serialized.end()));
-			new_child.hash = Hpp::deserializeByteV(serialized_it, serialized.end(), NODE_HASH_SIZE);
-			new_child.fsmetadata = FsMetadata(serialized_it, serialized.end());
-			if (children.find(child_name) != children.end()) {
-				throw 0xbeef;
+	bool trying_old_method = true;
+	while (true) {
+		Hpp::ByteV::const_iterator serialized_it = serialized.begin();
+		try {
+			if (trying_old_method) {
+				Hpp::deserializeUInt32(serialized_it, serialized.end());
 			}
-			children[child_name] = new_child;
+			while (serialized_it != serialized.end()) {
+				Child new_child;
+				std::string child_name = Hpp::deserializeString(serialized_it, serialized.end(), 2);
+				if (child_name.empty()) {
+					throw 0xbeef;
+				}
+				new_child.type = (FsType)(Hpp::deserializeUInt8(serialized_it, serialized.end()));
+				new_child.hash = Hpp::deserializeByteV(serialized_it, serialized.end(), NODE_HASH_SIZE);
+				new_child.fsmetadata = FsMetadata(serialized_it, serialized.end());
+				if (children.find(child_name) != children.end()) {
+					throw 0xbeef;
+				}
+				children[child_name] = new_child;
+			}
 		}
+		catch ( ... ) {
+			// If old method failed, then try new one
+			if (trying_old_method) {
+				trying_old_method = false;
+				children.clear();
+				continue;
+			}
+			throw Hpp::Exception("Folder data corrupted!");
+		}
+		break;
 	}
-	catch ( ... ) {
-		throw Hpp::Exception("Folder data corrupted!");
-	}
-
 }
 
 void Folder::setChild(std::string const& child_name, Child const& child)
@@ -114,7 +127,6 @@ std::string Folder::getNextChild(std::string const& child_name) const
 
 void Folder::serialize(Hpp::ByteV& result) const
 {
-	result += Hpp::uInt32ToByteV(children.size());
 	for (Children::const_iterator children_it = children.begin();
 	     children_it != children.end();
 	     ++ children_it) {
