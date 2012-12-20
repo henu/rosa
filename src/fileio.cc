@@ -249,8 +249,8 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 	// Read serialized journal
 	uint64_t journal_info_loc = getJournalInfoLocation();
 	uint64_t journal_loc = Hpp::cStrToUInt64(&readPart(journal_info_loc, 8)[0]);
-	uint64_t journal_srz_size = Hpp::cStrToUInt64(&readPart(journal_loc, 8)[0]);
-	Hpp::ByteV journal_srz = readPart(journal_loc + 8, journal_srz_size);
+	uint64_t journal_srz_size = Hpp::cStrToUInt32(&readPart(journal_loc, 4)[0]);
+	Hpp::ByteV journal_srz = readPart(journal_loc + 4, journal_srz_size);
 
 	// Deserialize journal
 	Hpp::ByteV::const_iterator journal_srz_it = journal_srz.begin();
@@ -388,8 +388,8 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 		}
 
 		// Write journal to disk
-		writeToDisk(data_end, Hpp::uInt64ToByteV(journal_srz.size()));
-		writeToDisk(data_end + 8, journal_srz);
+		writeToDisk(data_end, Hpp::uInt32ToByteV(journal_srz.size()));
+		writeToDisk(data_end + 4, journal_srz);
 		file.flush();
 
 		// Write journal flag to disk
