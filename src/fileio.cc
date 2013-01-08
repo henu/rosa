@@ -11,6 +11,7 @@
 #include <hpp/aes256ofbcipher.h>
 #include <hpp/random.h>
 #include <cstring>
+#include <algorithm>
 
 #ifdef ENABLE_FILEIO_CACHE
 FileIO::FileIO(size_t writecache_max_size, size_t readcache_max_size) :
@@ -34,11 +35,8 @@ journal_exists(false)
 
 FileIO::~FileIO(void)
 {
-	if (writecache_state == WAITING_MORE_WITHOUT_JOURNAL) {
-		writeWritecacheToDisk(false);
-	} else if (writecache_state == WAITING_MORE_WITH_JOURNAL) {
-		writeWritecacheToDisk(true);
-	}
+	flush();
+	HppAssert(writecache_state == NOT_INITIALIZED, "Invalid writecache state!");
 
 	for (Readcache::iterator readcache_it = readcache.begin();
 	     readcache_it != readcache.end();
@@ -55,16 +53,17 @@ void FileIO::closeAndOpenFile(Hpp::Path const& path)
 	}
 
 	// If file already exists, then do not use trunc
-	std::ios_base::openmode openmode = std::ios_base::binary | std::ios_base::in | std::ios_base::out;
+	file_openmode = std::ios_base::binary | std::ios_base::in | std::ios_base::out;
 	if (!path.exists()) {
-		openmode |= std::ios_base::trunc;
+		file_openmode |= std::ios_base::trunc;
 	}
 
-	file.open(path.toString().c_str(), openmode);
+	file.open(path.toString().c_str(), file_openmode);
 	if (!file.is_open()) {
 		throw Hpp::Exception("Unable to open archive \"" + path.toString(true) + "\"!");
 	}
 
+	file_path = path;
 }
 
 void FileIO::enableCrypto(Hpp::ByteV const& crypto_key)
@@ -221,7 +220,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 	writecache_total_size += chunk.size();
 }
 
-void FileIO::flushWrites(void)
+void FileIO::deinitWrite(void)
 {
 	HppAssert(writecache_state == INITIALIZED_WITHOUT_JOURNAL || writecache_state == INITIALIZED_WITH_JOURNAL, "Writecache is not initialized!");
 
@@ -239,6 +238,16 @@ void FileIO::flushWrites(void)
 		HppAssert(writecache_state == INITIALIZED_WITH_JOURNAL, "Wrong state!");
 		writecache_state = WAITING_MORE_WITH_JOURNAL;
 	}
+}
+
+void FileIO::flush(void)
+{
+	if (writecache_state == WAITING_MORE_WITHOUT_JOURNAL) {
+		writeWritecacheToDisk(false);
+	} else if (writecache_state == WAITING_MORE_WITH_JOURNAL) {
+		writeWritecacheToDisk(true);
+	}
+	writecache_state = NOT_INITIALIZED;
 }
 
 bool FileIO::finishPossibleInterruptedJournal(void)
@@ -270,10 +279,55 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 
 }
 
+void FileIO::shrinkFileToMinimumPossible(void)
+{
+	if (journal_exists) {
+		return;
+	}
+
+	// First write everything to disk
+	flush();
+	HppAssert(writecache_state == NOT_INITIALIZED, "Invalid writecache state!");
+
+	// Close file, so it can be safely truncated
+	file.close();
+
+	// Truncate
+	file_path.resizeFile(data_end);
+
+	// Open file again
+	file.open(file_path.toString().c_str(), file_openmode);
+	if (!file.is_open()) {
+		throw Hpp::Exception("Unable to open archive \"" + file_path.toString(true) + "\" after it was resized!");
+	}
+
+	// Remove everything from read cache that is at removed area
+	#ifdef ENABLE_FILEIO_CACHE
+	Readcache::iterator readcache_it = readcache.begin();
+	while (readcache_it != readcache.end()) {
+		uint64_t chunk_begin = readcache_it->first;
+		Readcachechunk* chunk = readcache_it->second;
+		if (chunk_begin + chunk->data.size() > data_end) {
+			// Reduce total size and delete actual chunk
+			readcache_total_size -= chunk->data.size();
+			delete chunk;
+			// Remove iterator from priorities
+			Readcachepriorities::iterator readcache_priors_find = std::find(readcache_priors.begin(), readcache_priors.end(), readcache_it);
+			HppAssert(readcache_priors_find != readcache_priors.end(), "Chunk iterator not found from priorities!");
+			readcache_priors.erase(readcache_priors_find);
+			// Remove from cache
+			readcache.erase(readcache_it ++);
+		} else {
+			++ readcache_it;
+		}
+	}
+	#endif
+}
+
 void FileIO::clearJournalFlag(void)
 {
 	writeJournalflag(false);
-	file.sync();
+	file.flush();
 	journal_exists = false;
 }
 

@@ -51,12 +51,19 @@ public:
 	void writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt = true);
 
 	// Finish writes that are in queue either with journal or without it
-	void flushWrites(void);
+	void deinitWrite(void);
+
+	// Ensures everything is written to disk.
+	void flush(void);
 
 	// Reads and applies writes that are found from journal. If journal
 	// does not exist, then this function does nothing. Returns true
 	// whenever interrupted journal was found (and applied).
 	bool finishPossibleInterruptedJournal(void);
+
+	// Reduces file size to minimum possible.
+	// Does nothing if journal exists.
+	void shrinkFileToMinimumPossible(void);
 
 private:
 
@@ -79,6 +86,8 @@ private:
 	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL, WAITING_MORE_WITHOUT_JOURNAL, WAITING_MORE_WITH_JOURNAL };
 
 	std::fstream file;
+	std::ios_base::openmode file_openmode;
+	Hpp::Path file_path;
 
 	Hpp::ByteV crypto_key;
 

@@ -98,7 +98,7 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	// Nodes cannot be spawned without this.
 	setOrphanNodesFlag(true);
 
-	io.flushWrites();
+	io.deinitWrite();
 
 	// Spawn empty Folder node to serve as root node
 	Nodes::Folder folder;
@@ -113,7 +113,7 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	setOrphanNodesFlag(false);
 
 	// Flush writes
-	io.flushWrites();
+	io.deinitWrite();
 
 	HppAssert(verifyReferences(), "Reference counts have failed!");
 }
@@ -157,7 +157,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 	bool orphan_nodes_flag_before = getOrphanNodesFlag();
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
-	io.flushWrites();
+	io.deinitWrite();
 
 	Nodes::Folder new_folder = fpath.back();
 	Hpp::ByteV root_now;
@@ -198,7 +198,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 
 	io.initWrite(false);
 	setOrphanNodesFlag(orphan_nodes_flag_before);
-	io.flushWrites();
+	io.deinitWrite();
 }
 
 void Archive::get(Paths const& sources, Hpp::Path const& dest)
@@ -302,7 +302,7 @@ void Archive::remove(Paths const& paths)
 	bool orphan_nodes_flag_before = getOrphanNodesFlag();
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
-	io.flushWrites();
+	io.deinitWrite();
 
 	Hpp::ByteV root_now = root_ref;
 
@@ -340,7 +340,7 @@ void Archive::remove(Paths const& paths)
 
 	io.initWrite(false);
 	setOrphanNodesFlag(orphan_nodes_flag_before);
-	io.flushWrites();
+	io.deinitWrite();
 }
 
 void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
@@ -374,7 +374,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 	bool orphan_nodes_flag_before = getOrphanNodesFlag();
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
-	io.flushWrites();
+	io.deinitWrite();
 
 	Hpp::ByteV root_now = root_ref;
 
@@ -412,7 +412,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 
 	io.initWrite(false);
 	setOrphanNodesFlag(orphan_nodes_flag_before);
-	io.flushWrites();
+	io.deinitWrite();
 }
 
 void Archive::finishPossibleInterruptedJournal(void)
@@ -466,12 +466,17 @@ void Archive::removePossibleOrphans(void)
 	// needed, as this writes to only one byte.
 	io.initWrite(false);
 	setOrphanNodesFlag(false);
-	io.flushWrites();
+	io.deinitWrite();
 }
 
 void Archive::optimizeMetadata(void)
 {
 // TODO: Balance search tree!
+}
+
+void Archive::shrinkFileToMinimumPossible(void)
+{
+	io.shrinkFileToMinimumPossible();
 }
 
 uint64_t Archive::getNextDataentry(uint64_t data_entry_loc)
@@ -1321,7 +1326,7 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	writeMetadata(metadata_new, metadata_new_loc);
 
 	// Write
-	io.flushWrites();
+	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 }
@@ -1605,7 +1610,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		io.initWrite(true);
 		writeRootRefAndCounts();
 		writeEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
-		io.flushWrites();
+		io.deinitWrite();
 		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
@@ -1714,7 +1719,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		if (empty_bytes_after_datasec_begin > 0) {
 			writeEmpty(datasec_begin + bytes, empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
 		}
-		io.flushWrites();
+		io.deinitWrite();
 		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	}
@@ -1844,7 +1849,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 		writeRootRefAndCounts();
 	}
 	// Do writing
-	io.flushWrites();
+	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 
 	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
@@ -1902,7 +1907,7 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 	}
 
 	// Do writes
-	io.flushWrites();
+	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
 	HppAssert(verifyRootNodeExists(), "There is no references to root node any more!");
@@ -2084,7 +2089,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	}
 
 	// Do writes
-	io.flushWrites();
+	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
 }
 

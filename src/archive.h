@@ -59,6 +59,10 @@ public:
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
 
+	// Reduces file size to minimum possible.
+	// Does nothing if journal exists.
+	void shrinkFileToMinimumPossible(void);
+
 	// Getters, etc.
 	inline bool isPasswordProtected(void) const { return !crypto_key.empty(); }
 	inline Hpp::ByteV getPasswordVerifier(void) const { return crypto_password_verifier; }

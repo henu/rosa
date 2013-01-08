@@ -101,11 +101,13 @@ void Archiver::printDebugInformation(std::ostream* strm)
 void Archiver::put(Paths const& src, Hpp::Path const& dest)
 {
 	archive.put(src, dest);
+	archive.shrinkFileToMinimumPossible();
 }
 
 void Archiver::createNewFolders(Paths const& paths, Nodes::FsMetadata const& fsmetadata)
 {
 	archive.createNewFolders(paths, fsmetadata);
+	archive.shrinkFileToMinimumPossible();
 }
 
 void Archiver::get(Paths const& sources, Hpp::Path const& dest)
@@ -121,6 +123,7 @@ void Archiver::list(Hpp::Path const& path, std::ostream* strm)
 void Archiver::remove(Paths const& paths)
 {
 	archive.remove(paths);
+	archive.shrinkFileToMinimumPossible();
 }
 
 void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
@@ -136,6 +139,7 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 	}
 
 	archive.put(sources, snapshot_path);
+	archive.shrinkFileToMinimumPossible();
 }
 
 void Archiver::fixPossibleErrors(void)
@@ -147,6 +151,7 @@ void Archiver::fixPossibleErrors(void)
 void Archiver::optimize(void)
 {
 	archive.optimizeMetadata();
+	archive.shrinkFileToMinimumPossible();
 }
 
 void Archiver::verify(Useroptions const& useroptions)
