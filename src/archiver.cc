@@ -30,6 +30,15 @@ void Archiver::printDebugInformation(std::ostream* strm)
 	(*strm) << "Root node: " << Hpp::byteVToHexV(archive.getRootReference()) << std::endl;
 
 	(*strm) << "Number of nodes: " << archive.getNumOfNodes() << std::endl;
+
+	size_t dataarea_size = archive.getDataareaSize();
+	size_t empty_bytes = archive.getEmptyBytesAtDataarea();
+
+	(*strm) << "Size of data area: " << dataarea_size << std::endl;
+	(*strm) << "Actual bytes at data area: " << (dataarea_size - empty_bytes) << std::endl;
+	(*strm) << "Empty bytes at data area: " << empty_bytes << std::endl;
+	(*strm) << "Percent of empty bytes at data area: " << int(100 * (double(empty_bytes) / dataarea_size) + 0.5) << std::endl;
+
 	(*strm) << "Begin of searchtree: " << archive.getBeginOfSearchtree() << std::endl;
 
 	Archive::SearchtreeDepthAnalysis stda = archive.getSearchtreeDepths();

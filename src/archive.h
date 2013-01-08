@@ -78,7 +78,10 @@ public:
 	uint64_t getJournalLocation(void);
 	inline bool getOrphanNodesFlag(void) const { return orphan_nodes_exists; }
 	Hpp::ByteV getNodeData(Hpp::ByteV const& node_hash);
-	inline bool pathExists(Hpp::Path const& path);
+	bool pathExists(Hpp::Path const& path);
+	size_t getDataareaSize(void);
+	// Dataentry headers are included too
+	size_t getEmptyBytesAtDataarea(void);
 
 	// Returns counts of different search tree depths. This can be used
 	// to analyse if search tree is optimal or not. Index in result

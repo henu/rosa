@@ -535,7 +535,29 @@ Hpp::ByteV Archive::getNodeData(Hpp::ByteV const& node_hash)
 	return getNodeData(metadata_loc);
 }
 
-inline bool Archive::pathExists(Hpp::Path const& path)
+size_t Archive::getDataareaSize(void)
+{
+	return datasec_end - getSectionBegin(SECTION_DATA);
+}
+
+size_t Archive::getEmptyBytesAtDataarea(void)
+{
+	size_t result = 0;
+	size_t dataentry_loc = getSectionBegin(SECTION_DATA);
+	while (dataentry_loc != datasec_end) {
+		if (dataentry_loc > datasec_end) {
+			throw Hpp::Exception("Dataentry overflows data-area!");
+		}
+		Nodes::Dataentry de = getDataentry(dataentry_loc, false);
+		if (de.empty) {
+			result += Nodes::Dataentry::HEADER_SIZE + de.size;
+		}
+		dataentry_loc += Nodes::Dataentry::HEADER_SIZE + de.size;
+	}
+	return result;
+}
+
+bool Archive::pathExists(Hpp::Path const& path)
 {
 	HppAssert(path.isAbsolute(), "Path must be absolute!");
 
