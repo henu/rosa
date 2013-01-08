@@ -92,7 +92,9 @@ public:
 
 private:
 
-	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 500;
+	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;
+	static size_t const VERIFY_REFERENCES_MAX_CHECK_AMOUNT_PER_ITERATION = 25000;
+	static size_t const FIND_EMPTY_DATA_TRIES = 100;
 
 	enum Section {
 		SECTION_IDENTIFIER,

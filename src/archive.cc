@@ -306,7 +306,7 @@ void Archive::remove(Paths const& paths)
 
 	Hpp::ByteV root_now = root_ref;
 
-	std::vector< Hpp::ByteV > nodes_to_remove;
+	ByteVs nodes_to_remove;
 
 	// Do removing and replace root node
 	for (Paths::const_iterator paths_it = paths.begin();
@@ -322,7 +322,7 @@ void Archive::remove(Paths const& paths)
 
 	// Clean old root node and all extra nodes
 	// that were created during removings.
-	for (std::vector< Hpp::ByteV >::const_iterator nodes_to_remove_it = nodes_to_remove.begin();
+	for (ByteVs::const_iterator nodes_to_remove_it = nodes_to_remove.begin();
 	     nodes_to_remove_it != nodes_to_remove.end();
 	     ++ nodes_to_remove_it) {
 		Hpp::ByteV const& node_to_remove = *nodes_to_remove_it;
@@ -378,7 +378,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 
 	Hpp::ByteV root_now = root_ref;
 
-	std::vector< Hpp::ByteV > nodes_to_remove;
+	ByteVs nodes_to_remove;
 
 	// Make new folders
 	for (Paths::const_iterator paths_it = paths.begin();
@@ -394,7 +394,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 
 	// Clean old root node and all extra nodes
 	// that were created during removings.
-	for (std::vector< Hpp::ByteV >::const_iterator nodes_to_remove_it = nodes_to_remove.begin();
+	for (ByteVs::const_iterator nodes_to_remove_it = nodes_to_remove.begin();
 	     nodes_to_remove_it != nodes_to_remove.end();
 	     ++ nodes_to_remove_it) {
 		Hpp::ByteV const& node_to_remove = *nodes_to_remove_it;
@@ -617,14 +617,12 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 
 bool Archive::verifyReferences(bool throw_exception)
 {
-	size_t const MAX_CHECK_AMOUNT_PER_ITERATION = 25000;
-
 	size_t metadata_ofs = 0;
 	while (metadata_ofs < nodes_size) {
 
 		// Pick some Nodes for reference count check
 		std::map< Hpp::ByteV, uint32_t > refs;
-		while (refs.size() < MAX_CHECK_AMOUNT_PER_ITERATION && metadata_ofs < nodes_size) {
+		while (refs.size() < VERIFY_REFERENCES_MAX_CHECK_AMOUNT_PER_ITERATION && metadata_ofs < nodes_size) {
 			Nodes::Metadata metadata = getNodeMetadata(metadata_ofs);
 			++ metadata_ofs;
 			refs[metadata.hash] = metadata.refs;
@@ -1116,8 +1114,6 @@ size_t Archive::findEmptyData(size_t size, ssize_t prevent_results_before)
 	Hpp::Profiler prof("Archive::findEmptyData");
 	#endif
 
-	size_t const TRIES = 100;
-
 	// If there are any nodes, then search empty data among them first.
 	if (nodes_size > 0) {
 		// First pick random metadata. The position of its data is
@@ -1128,7 +1124,7 @@ size_t Archive::findEmptyData(size_t size, ssize_t prevent_results_before)
 		Nodes::Dataentry de = getDataentry(search, false);
 		search += Nodes::Dataentry::HEADER_SIZE + de.size;
 
-		size_t tries_left = TRIES;
+		size_t tries_left = FIND_EMPTY_DATA_TRIES;
 		while (tries_left > 0) {
 			-- tries_left;
 
