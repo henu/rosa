@@ -6,4 +6,6 @@
 
 typedef std::vector< Hpp::Path > Paths;
 
+typedef std::vector< Hpp::ByteV > ByteVs;
+
 #endif

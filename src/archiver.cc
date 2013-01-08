@@ -141,7 +141,7 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 void Archiver::fixPossibleErrors(void)
 {
 	archive.finishPossibleInterruptedJournal();
-// TODO: Remove possible orphans!
+	archive.removePossibleOrphans();
 }
 
 void Archiver::optimize(void)

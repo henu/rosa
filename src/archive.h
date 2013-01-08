@@ -53,6 +53,9 @@ public:
 	// journal does not exist, then this function does nothing.
 	void finishPossibleInterruptedJournal(void);
 
+	// Goes all Nodes through and removes those that are orphans.
+	void removePossibleOrphans(void);
+
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
 
@@ -88,6 +91,8 @@ public:
 	bool verifyRootNodeExists(bool throw_exception = false);
 
 private:
+
+	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 500;
 
 	enum Section {
 		SECTION_IDENTIFIER,

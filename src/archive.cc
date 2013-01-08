@@ -427,9 +427,51 @@ void Archive::finishPossibleInterruptedJournal(void)
 	}
 }
 
+void Archive::removePossibleOrphans(void)
+{
+	bool all_orphans_known = false;
+	ByteVs orphans;
+	std::vector< Nodes::Type > types;
+	do {
+		// Gather as many orphans as possible
+		orphans.clear();
+		types.clear();
+		size_t metadata_ofs = 0;
+		while (orphans.size() < REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY) {
+			Nodes::Metadata metadata = getMetadata(metadata_ofs);
+			if (metadata.refs == 0) {
+				orphans.push_back(metadata.hash);
+				Nodes::Dataentry dataentry = getDataentry(metadata.data_loc, false);
+				types.push_back(dataentry.type);
+			}
+			++ metadata_ofs;
+			if (metadata_ofs == nodes_size) {
+				all_orphans_known = true;
+				break;
+			}
+		}
+
+		// Now go all orphans through and remove them
+		for (size_t orphan_id = 0;
+		     orphan_id < orphans.size();
+		     ++ orphan_id) {
+			Hpp::ByteV const& hash = orphans[orphan_id];
+			Nodes::Type type = types[orphan_id];
+			clearOrphanNodeRecursively(hash, type);
+		}
+
+	} while (!all_orphans_known);
+
+	// Mark no orphans left. Journal is not
+	// needed, as this writes to only one byte.
+	io.initWrite(false);
+	setOrphanNodesFlag(false);
+	io.flushWrites();
+}
+
 void Archive::optimizeMetadata(void)
 {
-// TODO: Rewrite this!
+// TODO: Balance search tree!
 }
 
 uint64_t Archive::getNextDataentry(uint64_t data_entry_loc)

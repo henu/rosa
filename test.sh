@@ -90,6 +90,19 @@ verifyArchive test
 ./rosa -p test mkdir testdata/archive.rosa today/2/lol /test_omg
 verifyArchive test
 
+rm testdata/archive.rosa
+
+echo "Interrupting snapshotting"
+for i in $(seq 1 1 120)
+do
+	./rosa snapshot testdata/archive.rosa test testdata/1 &
+	ROSA_PID=$!
+	sleep 1
+	kill -9 $ROSA_PID
+done
+./rosa snapshot testdata/archive.rosa test testdata/1
+verifyArchive
+
 echo "Cleaning"
 rm -rf testdata
 
