@@ -29,6 +29,7 @@ writecache_max_size(writecache_max_size),
 writecache_total_size(0),
 journal_exists(false)
 {
+// TODO: If archive contains journal and is opened in read only method, then fix journal here and store it to memory!
 }
 
 FileIO::~FileIO(void)

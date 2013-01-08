@@ -25,6 +25,7 @@ struct Metadata
 	uint64_t child_big;
 	// This points to the beginning of data entry, i.e. to its header.
 	uint64_t data_loc;
+// TODO: Is this useless?
 	uint32_t data_size_uncompressed;
 
 	inline Metadata(void) :
