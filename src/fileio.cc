@@ -63,6 +63,9 @@ void FileIO::closeAndOpenFile(Hpp::Path const& path)
 		throw Hpp::Exception("Unable to open archive \"" + path.toString(true) + "\"!");
 	}
 
+	// In case of close/opens, remove trunc from flags
+	file_openmode &= ~std::ios_base::trunc;
+
 	file_path = path;
 }
 
