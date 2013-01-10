@@ -74,8 +74,8 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 		io.enableCrypto(crypto_key);
 
 		// Create new password verifier and write it to the disk.
-		crypto_password_verifier = Hpp::randomSecureData(PASSWORD_VERIFIER_SIZE / 2);
-		writePasswordVerifier();
+		Hpp::ByteV crypto_password_verifier = Hpp::randomSecureData(PASSWORD_VERIFIER_SIZE / 2);
+		writePasswordVerifier(crypto_password_verifier);
 	}
 
 	io.initAndWriteJournalFlagToFalse();
@@ -477,6 +477,11 @@ void Archive::optimizeMetadata(void)
 void Archive::shrinkFileToMinimumPossible(void)
 {
 	io.shrinkFileToMinimumPossible();
+}
+
+Hpp::ByteV Archive::getPasswordVerifier(void)
+{
+	return io.readPart(getSectionBegin(SECTION_PASSWORD_VERIFIER), PASSWORD_VERIFIER_SIZE / 2);
 }
 
 uint64_t Archive::getNextDataentry(uint64_t data_entry_loc)
@@ -928,7 +933,7 @@ void Archive::loadStateFromFile(std::string const& password)
 			// Inform FileIO about this
 			io.enableCrypto(crypto_key);
 
-			crypto_password_verifier = io.readPart(getSectionBegin(SECTION_PASSWORD_VERIFIER), PASSWORD_VERIFIER_SIZE);
+			Hpp::ByteV crypto_password_verifier = io.readPart(getSectionBegin(SECTION_PASSWORD_VERIFIER), PASSWORD_VERIFIER_SIZE);
 			Hpp::ByteV::iterator pw_verif_half = crypto_password_verifier.begin() + PASSWORD_VERIFIER_SIZE / 2;
 
 			if (!std::equal(crypto_password_verifier.begin(), pw_verif_half, pw_verif_half)) {
@@ -1353,7 +1358,7 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 
 }
 
-void Archive::writePasswordVerifier(void)
+void Archive::writePasswordVerifier(Hpp::ByteV const& crypto_password_verifier)
 {
 	if (crypto_key.empty()) {
 		throw Hpp::Exception("Writing password verifier requires cryptokey set!");

@@ -65,7 +65,7 @@ public:
 
 	// Getters, etc.
 	inline bool isPasswordProtected(void) const { return !crypto_key.empty(); }
-	inline Hpp::ByteV getPasswordVerifier(void) const { return crypto_password_verifier; }
+	Hpp::ByteV getPasswordVerifier(void);
 	inline Hpp::ByteV getRootReference(void) const { return root_ref; }
 	inline uint64_t getNumOfNodes(void) const { return nodes_size; }
 	inline uint64_t getBeginOfSearchtree(void) const { return searchtree_begin; }
@@ -132,7 +132,6 @@ private:
 
 	// Crypto stuff
 	Hpp::ByteV crypto_key;
-	Hpp::ByteV crypto_password_verifier;
 
 	// Reference to root node
 	Hpp::ByteV root_ref;
@@ -247,7 +246,7 @@ private:
 	// Functions to do different writes
 	// ----------------------------------------
 
-	void writePasswordVerifier(void);
+	void writePasswordVerifier(Hpp::ByteV const& crypto_password_verifier);
 
 	void writeOrphanNodesFlag(bool orphans_exists);
 
