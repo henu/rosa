@@ -31,6 +31,7 @@ writecache_total_size(0),
 journal_exists(false)
 {
 // TODO: If archive contains journal and is opened in read only method, then fix journal here and store it to memory!
+// TODO: Also, make it so that FileIO is requested to open stuff either in read only mode, or read-write. And if journal needs to be fixed in read only mode, then it is somehow added to read cache with higher priority, so it wont get released ever.
 }
 
 FileIO::~FileIO(void)
