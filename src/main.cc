@@ -339,7 +339,7 @@ void run(int argc, char** argv)
 		std::cout << Hpp::wrapWords(program_name + " restore <ARCHIVE> <SNAPSHOT> [TARGET]", "\t\t") << std::endl;
 		std::cout << "\tBasic way:" << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " put <ARCHIVE> <SOURCE_1> [SOURCE_2 ... SOURCE_N] <TARGET>", "\t\t") << std::endl;
-		std::cout << Hpp::wrapWords(program_name + " get <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " get <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N] <TARGET>", "\t\t") << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " mv/move <ARCHIVE> <PATH_FROM> <PATH_TO>", "\t\t") << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " ls/list <ARCHIVE> [PATH_1 PATH_2 ... PATH_N]", "\t\t") << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " mkdir <ARCHIVE> <PATH_1> [PATH_2 ... PATH_N]", "\t\t") << std::endl;
