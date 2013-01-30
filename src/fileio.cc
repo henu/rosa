@@ -28,6 +28,7 @@ readcache_total_size(0),
 writecache_state(NOT_INITIALIZED),
 writecache_max_size(writecache_max_size),
 writecache_total_size(0),
+writecache_data_end(0),
 journal_exists(false)
 {
 // TODO: If archive contains journal and is opened in read only method, then fix journal here and store it to memory!
@@ -73,6 +74,12 @@ void FileIO::closeAndOpenFile(Hpp::Path const& path)
 void FileIO::enableCrypto(Hpp::ByteV const& crypto_key)
 {
 	this->crypto_key = crypto_key;
+}
+
+void FileIO::setEndOfData(uint64_t data_end)
+{
+	this->data_end = data_end;
+	writecache_data_end = std::max< size_t >(writecache_data_end, data_end);
 }
 
 void FileIO::initAndWriteJournalFlagToFalse(void)
@@ -144,17 +151,20 @@ void FileIO::initWrite(bool use_journal)
 		} else {
 			writecache_state = INITIALIZED_WITHOUT_JOURNAL;
 		}
+		writecache_data_end = data_end;
 	}
 	// If we are waiting for more writes, but without journal, and next
 	// writes use journal, then write pending stuff to disk first.
 	else if (writecache_state == WAITING_MORE_WITHOUT_JOURNAL && use_journal) {
 		writeWritecacheToDisk(false);
 		writecache_state = INITIALIZED_WITH_JOURNAL;
+		writecache_data_end = data_end;
 	}
 	// If we are already waiting with journal,
 	// then keep using it with these writes too.
 	else if (writecache_state == WAITING_MORE_WITH_JOURNAL) {
 		writecache_state = INITIALIZED_WITH_JOURNAL;
+		HppAssert(writecache_data_end >= data_end, "writecache_data_end is too small!");
 	}
 	// Otherwise we are not waiting with journal and
 	// do not want to use it with these writes either.
@@ -162,6 +172,7 @@ void FileIO::initWrite(bool use_journal)
 		HppAssert(writecache_state == WAITING_MORE_WITHOUT_JOURNAL, "Wrong state!");
 		HppAssert(!use_journal, "Wrong flag!");
 		writecache_state = INITIALIZED_WITHOUT_JOURNAL;
+		HppAssert(writecache_data_end >= data_end, "writecache_data_end is too small!");
 	}
 }
 
@@ -422,12 +433,12 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 		     ++ writecache_it) {
 			uint64_t offset = writecache_it->first;
 			Hpp::ByteV const& data = writecache_it->second.data;
-			HppAssert(offset + data.size() <= data_end, "One of writes in cache overflows beyond data area!");
+			HppAssert(offset + data.size() <= writecache_data_end, "One of writes in cache overflows beyond data area!");
 		}
 		#endif
 
 		// Write journal location to disk
-		writeToDisk(getJournalInfoLocation(), Hpp::uInt64ToByteV(data_end));
+		writeToDisk(getJournalInfoLocation(), Hpp::uInt64ToByteV(writecache_data_end));
 
 		// Serialize journal to byte vector
 		Hpp::ByteV journal_srz;
@@ -447,8 +458,8 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 		}
 
 		// Write journal to disk
-		writeToDisk(data_end, Hpp::uInt32ToByteV(journal_srz.size()));
-		writeToDisk(data_end + 4, journal_srz);
+		writeToDisk(writecache_data_end, Hpp::uInt32ToByteV(journal_srz.size()));
+		writeToDisk(writecache_data_end + 4, journal_srz);
 		file.flush();
 
 		// Write journal flag to disk

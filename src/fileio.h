@@ -27,7 +27,7 @@ public:
 	void enableCrypto(Hpp::ByteV const& crypto_key);
 
 	// Updates end of all data (except journal)
-	inline void setEndOfData(uint64_t data_end) { this->data_end = data_end; }
+	void setEndOfData(uint64_t data_end);
 
 	// Writes journal flag to the first time and write it
 	// false. This is called when archive is created.
@@ -76,7 +76,6 @@ private:
 		Readcachepriorities::iterator prior_it;
 	};
 
-// TODO: In future, make Writecache to support chained writes! This means that when user wants to flush, the writes might just get queued in a chain. This is useful for filesystems that do not like many flushes. In this chain queue, join those writes that use subsequent journals. Joining means that older one of overlapping chunks is not written.
 	struct Writecachechunk
 	{
 		Hpp::ByteV data;
@@ -105,6 +104,7 @@ private:
 	WritecacheState writecache_state;
 	size_t writecache_max_size;
 	size_t writecache_total_size;
+	size_t writecache_data_end; // This tell what maximum data end has been
 
 	// Is there journal or orphan nodes
 	bool journal_exists;
