@@ -31,9 +31,9 @@ public:
 	// Write possible interrupted journal and clean possible orphans.
 	void fixPossibleErrors(void);
 
-	// Optimizes archive. This means sorting
-	// metadata, filling empty gaps in arrays, etc.
-	void optimize(void);
+	// Optimizes archive. This means sorting metadata, filling empty
+	// gaps in arrays, etc. "max_duration" is just an estimation.
+	void optimize(Hpp::Delay const& max_duration);
 
 	// Verfies everything is okay
 	void verify(Useroptions const& useroptions);

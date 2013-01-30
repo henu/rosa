@@ -474,6 +474,139 @@ void Archive::optimizeMetadata(void)
 	// TODO: Balance search tree!
 }
 
+void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
+{
+	if (nodes_size == 0) {
+		return;
+	}
+	
+	size_t last_known_not_empty = getSectionBegin(SECTION_DATA);
+
+	while (deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+
+		// First pick fixed amount of non empty dataentries
+		// that are as far as possible from begin. There are also fixed
+		// amount of tries to do this. If not all are found, its okay.
+		SizeBySize des_helper; // Indexed by offset
+		SizeBySizeMulti des; // Indexed by size
+		// First select some data entries randomly
+		findRandomDataentries(des_helper, REMOVE_EMPTIES_NUM_OF_SEARCH_HELPER_DATAENTRIES);
+		// Now it is possible to use randomly picked data entries
+		// to find more dataentries from approximated end of file.
+		std::map< size_t, size_t >::const_reverse_iterator des_init_rit = des_helper.rbegin();
+		size_t search_end = datasec_end;
+		while (des.size() < REMOVE_EMPTIES_MAX_DATAENTRIES_IN_MEMORY && des_init_rit != des_helper.rend()) {
+			// Search for more data entries.			
+			size_t search = des_init_rit->first + des_init_rit->second;
+			des.insert(std::pair< size_t, size_t >(des_init_rit->second, des_init_rit->first));
+			while (des.size() < REMOVE_EMPTIES_MAX_DATAENTRIES_IN_MEMORY && search < search_end) {
+				Nodes::Dataentry de = getDataentry(search, false);
+				if (!de.empty) {
+					if (search == last_known_not_empty) {
+						last_known_not_empty += Nodes::Dataentry::HEADER_SIZE + de.size;
+					} else if (search > last_known_not_empty) {
+						des.insert(std::pair< size_t, size_t >(Nodes::Dataentry::HEADER_SIZE + de.size, search));
+					}
+				}
+				search += Nodes::Dataentry::HEADER_SIZE + de.size;
+			}
+			
+			search_end = des_init_rit->first;
+			++ des_init_rit;
+		}
+		
+		// Now try to find empty positions that could be filled with
+		// found dataentries. Prefer those that are at the beginning.
+		while (!des.empty() && deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+			findRandomDataentries(des_helper, REMOVE_EMPTIES_NUM_OF_SEARCH_HELPER_DATAENTRIES);
+			// Remove all helper dataentries that are at the area
+			// that is known to have no empty data entries.
+			SizeBySize::iterator des_helper_remover = des_helper.begin();
+			while (des_helper_remover != des_helper.end() && des_helper_remover->first <= last_known_not_empty) {
+				SizeBySize::iterator des_helper_remove = des_helper_remover;
+				++ des_helper_remover;
+				des_helper.erase(des_helper_remove);
+			}
+			// Ensure begin of area that may
+			// contain empty data is included
+			HppAssert(des_helper.find(last_known_not_empty) == des_helper.end(), "Fail!");
+			des_helper[last_known_not_empty] = 0;
+
+			// Now go all helper locations through and try to
+			// find empty gaps. Found gaps are filled with
+			// found dataentries, or if this is not possible,
+			// they are filled by moving the following
+			// dataentries towards begin.
+			while (!des.empty() && !des_helper.empty() && deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+				size_t search = des_helper.begin()->first;
+				des_helper.erase(search);
+				bool updating_last_known_not_empty = (search == last_known_not_empty);
+
+				size_t iters_left = REMOVE_EMPTIES_EMPTY_FIND_ITERATIONS;
+				while (iters_left > 0/* && search < search_end*/ && search < datasec_end && deadline > Hpp::now()) {
+					-- iters_left;
+					Nodes::Dataentry de = getDataentry(search, false);
+					des_helper.erase(search);
+					if (de.empty) {
+						size_t empty_begin = search;
+						ssize_t empty_size = calculateAmountOfEmptySpace(empty_begin);
+						HppAssert(empty_size != 0, "There should be at least little amount of empty data!");
+						// If there is nothing more than empty, then stop
+						if (empty_size < 0) {
+							break;
+						}
+						
+						// Find best combination of dataentries to fill empty gap.
+						SizeBySize fillers;
+						// Check if perfect fit can be found
+						size_t calls_limit = REMOVE_EMPTIES_FITTER_CALLS_LIMIT;
+						if (findBestFillers(fillers, calls_limit, des, empty_begin, empty_size)) {
+							// Perfect fit was found, so now do movings
+							size_t dest = empty_begin;
+							for (SizeBySize::const_iterator fillers_it = fillers.begin();
+							     fillers_it != fillers.end();
+							     ++ fillers_it) {
+								size_t ofs = fillers_it->first;
+								size_t size = fillers_it->second;
+								moveData(ofs, dest, ofs, dest);
+								dest += size;
+								des_helper.erase(ofs);
+							}
+							search += empty_size;
+						} else {
+							// No perfect fit could be found, so move next Dataentry to
+							// the beginning of this empty space. Keep doing this as
+							// long the empty space after moved Dataentry remains same.
+// TODO: What if next is end of data section?
+							do {
+								size_t moved_de_ofs = empty_begin + empty_size;
+								Nodes::Dataentry moved_de = getDataentry(moved_de_ofs, false);
+								ensureNotInSizeIndexedOffsets(des, moved_de_ofs, Nodes::Dataentry::HEADER_SIZE + moved_de.size);
+								des_helper.erase(moved_de_ofs);
+								moveData(moved_de_ofs, empty_begin, empty_begin, empty_begin);
+								empty_begin += Nodes::Dataentry::HEADER_SIZE + moved_de.size;
+								ssize_t empty_after_moved_de = calculateAmountOfEmptySpace(empty_begin);
+								HppAssert(empty_after_moved_de < 0 || empty_after_moved_de >= empty_size, "There is less empty after moving!");
+								// Do movings as long as empty size remains same
+								if (empty_after_moved_de != empty_size) {
+									break;
+								}
+								HppAssert(empty_after_moved_de >= 0, "There should not be infinite amount here!");
+							} while (true);
+							search = empty_begin;
+						}
+					} else {
+						search += Nodes::Dataentry::HEADER_SIZE + de.size;
+					}
+					if (updating_last_known_not_empty) {
+						last_known_not_empty = search;
+					}
+				}
+			}
+		}
+	}
+}
+
 void Archive::shrinkFileToMinimumPossible(void)
 {
 	io.shrinkFileToMinimumPossible();
@@ -2373,6 +2506,135 @@ void Archive::analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t m
 	}
 	if (metadata.child_big != Nodes::Metadata::NULL_REF) {
 		analyseSearchtreeDepth(result, metadata.child_big, depth + 1);
+	}
+}
+
+void Archive::findRandomDataentries(SizeBySize& result, size_t max_to_find)
+{
+	result.clear();
+	while (result.size() < max_to_find) {
+		size_t metadata_i = rand() % nodes_size;
+		size_t metadata_i_original = metadata_i;
+		Nodes::Metadata metadata = getMetadata(metadata_i);
+		// If dataentry of this metadata is already
+		// loaded, then try next metadata
+		bool all_metadatas_tried = false;
+		while (result.find(metadata.data_loc) != result.end()) {
+			++ metadata_i;
+			if (metadata_i >= nodes_size) metadata_i = 0;
+			if (metadata_i == metadata_i_original) {
+				all_metadatas_tried = true;
+				break;
+			}
+			metadata = getMetadata(metadata_i);
+		}
+		if (all_metadatas_tried) {
+			break;
+		}
+		// Read total size of dataentry
+		Nodes::Dataentry de = getDataentry(metadata.data_loc, false);
+		HppAssert(result.find(metadata.data_loc) == result.end(), "Already found!");
+		size_t de_total_size = Nodes::Dataentry::HEADER_SIZE + de.size;
+		result[metadata.data_loc] = de_total_size;
+	}
+}
+
+bool Archive::findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySizeMulti& des, size_t empty_begin, size_t empty_size, size_t max_fitter_size)
+{
+	if (empty_size == 0) {
+		return true;
+	}
+	if (calls_limit == 0) {
+		return false;
+	}
+	-- calls_limit;
+	
+	// If there is Dataentry with perfect size, then return it
+	SizeBySizeMulti::iterator des_find = des.find(empty_size);
+	while (des_find != des.end()) {
+		size_t de_size = des_find->first;
+		size_t de_offset = des_find->second;
+		des.erase(des_find);
+		// Accept result only if its further
+		// from the beginning of data section.
+		HppAssert(de_offset != empty_begin, "Found Dataentry where should be empty!");
+		if (de_offset > empty_begin) {
+			result[de_offset] = de_size;
+			return true;
+		}
+		// This Dataentry is at the area that is known
+		// to have no gaps, so discard this Dataentry.
+		des_find = des.find(empty_size);
+	}
+
+	des_find = des.upper_bound(empty_size);
+
+	// Continue as long as there is dataentries big enough to fill the gap
+	while (des_find != des.begin() && calls_limit > 0) {
+		-- des_find;
+		
+		// Do not accept Dataentries that are at the
+		// area that is supposed to contain no gaps.
+		bool all_rest_are_at_no_gaps_area = false;
+		while (des_find->second <= empty_begin) {
+			HppAssert(des_find->second != empty_begin, "Found Dataentry where should be empty!");
+			if (des_find == des.begin()) {
+				des.erase(des_find);
+				all_rest_are_at_no_gaps_area = true;
+				break;
+			} else {
+				des.erase(des_find --);
+			}
+		}
+		if (all_rest_are_at_no_gaps_area) {
+			break;
+		}
+		
+		// Skip those Dataentries that are too big
+		if (des_find->first > max_fitter_size) {
+			continue;
+		}
+		
+		// Skip those Dataentries that are not after empty data
+		if (des_find->second < empty_begin + empty_size) {
+			continue;
+		}
+		
+		// Pick info about dataentry that would be checked and remove
+		// it from container so it won't be used multiple times.
+		size_t de_size = des_find->first;
+		size_t de_offset = des_find->second;
+		des.erase(des_find);
+		
+		// Keep searching recursively
+		HppAssert(empty_size >= de_size, "Fail!");
+		if (findBestFillers(result, calls_limit, des, empty_begin + de_size, empty_size - de_size, de_size)) {
+			result[de_offset] = de_size;
+			return true;
+		}
+		
+		// Dataentry of this size does not make perfect fit, so put its
+		// properties back to container and try one that is smaller
+		des.insert(std::pair< size_t, size_t >(de_size, de_offset));
+		std::pair< SizeBySizeMulti::iterator, SizeBySizeMulti::iterator > des_finds = des.equal_range(de_size);
+		des_find = des_finds.first;
+	}
+	return false;
+}
+
+void Archive::ensureNotInSizeIndexedOffsets(SizeBySizeMulti& mm, size_t offset, size_t size)
+{
+	std::pair< SizeBySizeMulti::iterator, SizeBySizeMulti::iterator > range = mm.equal_range(size);
+	SizeBySizeMulti::iterator range_begin = range.first;
+	SizeBySizeMulti::iterator range_end = range.second;
+	for (SizeBySizeMulti::iterator it = range_begin;
+	     it != range_end;
+	     ++ it) {
+		HppAssert(it->first == size, "Unexpected size!");
+		if (it->second == offset) {
+			mm.erase(it);
+			return;
+		}
 	}
 }
 

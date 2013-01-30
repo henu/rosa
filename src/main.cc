@@ -16,6 +16,9 @@ size_t stringToCachesize(std::string const& str);
 
 void run(int argc, char** argv)
 {
+	// Maximum optimizing delay when optimization is not requested
+	Hpp::Delay const MAXIMUM_OPTIMIZING_DELAY = Hpp::Delay::mins(5);
+
 	srand(time(NULL));
 
 	#ifdef ENABLE_PROFILER
@@ -381,14 +384,16 @@ void run(int argc, char** argv)
 
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
+		Hpp::Time start_time = Hpp::now();
 		archiver.put(sources, targets[0]);
-		archiver.optimize();
+		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
 	} else if (action == ACTION_GET) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
 		archiver.get(sources, targets[0]);
 	} else if (action == ACTION_REMOVE) {
+		Hpp::Time start_time = Hpp::now();
 		archiver.remove(targets);
-		archiver.optimize();
+		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
 	} else if (action == ACTION_MOVE) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
@@ -403,14 +408,18 @@ HppAssert(false, "Not implemented yet!");
 			}
 		}
 	} else if (action == ACTION_MKDIR) {
+		Hpp::Time start_time = Hpp::now();
 		archiver.createNewFolders(targets, fsmetadata);
+		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
 	} else if (action == ACTION_SNAPSHOT) {
+		Hpp::Time start_time = Hpp::now();
 		archiver.snapshot(snapshot, sources);
-		archiver.optimize();
+		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
 	} else if (action == ACTION_DESTROY) {
 		targets = Paths(1, Hpp::Path::getRoot() / snapshot);
+		Hpp::Time start_time = Hpp::now();
 		archiver.remove(targets);
-		archiver.optimize();
+		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
 	} else if (action == ACTION_RENAME) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
@@ -431,7 +440,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_VERIFY) {
 		archiver.verify(useroptions);
 	} else if (action == ACTION_OPTIMIZE) {
-		archiver.optimize();
+		archiver.optimize(Hpp::Delay::days(9999));
 	}
 
 }

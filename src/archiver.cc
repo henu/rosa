@@ -157,9 +157,10 @@ void Archiver::fixPossibleErrors(void)
 	archive.removePossibleOrphans();
 }
 
-void Archiver::optimize(void)
+void Archiver::optimize(Hpp::Delay const& max_duration)
 {
 	archive.optimizeMetadata();
+	archive.removeEmptyDataentries(Hpp::now() + max_duration);
 	archive.shrinkFileToMinimumPossible();
 }
 

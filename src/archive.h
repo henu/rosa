@@ -59,6 +59,8 @@ public:
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
 	
+	void removeEmptyDataentries(Hpp::Time const& deadline);
+
 	// Reduces file size to minimum possible.
 	// Does nothing if journal exists.
 	void shrinkFileToMinimumPossible(void);
@@ -102,6 +104,10 @@ private:
 	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;
 	static size_t const VERIFY_REFERENCES_MAX_CHECK_AMOUNT_PER_ITERATION = 25000;
 	static size_t const FIND_EMPTY_DATA_TRIES = 100;
+	static size_t const REMOVE_EMPTIES_NUM_OF_SEARCH_HELPER_DATAENTRIES = 1000;
+	static size_t const REMOVE_EMPTIES_MAX_DATAENTRIES_IN_MEMORY = 25000;
+	static size_t const REMOVE_EMPTIES_EMPTY_FIND_ITERATIONS = 30000;
+	static size_t const REMOVE_EMPTIES_FITTER_CALLS_LIMIT = 250; // Normally about 15-35 calls are needed.
 
 	enum Section {
 		SECTION_IDENTIFIER,
@@ -331,6 +337,18 @@ private:
 
 	// Recursively analyses nodes of searchtree.
 	void analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t metadata_loc, uint16_t depth);
+	
+	// Helper function to find specific number of
+	// dataentry offsets and sizes. "result" is cleared.
+	void findRandomDataentries(SizeBySize& result, size_t max_to_find);
+	
+	// Used by removeEmptyDataentries(). "result" is cleared.
+	// Returns true if perfect match was found. "calls_limit"
+	// tells how many calls are allowed to do. After it
+	// reaches zero, false is returned immediately.
+	bool findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySizeMulti& des, size_t empty_begin, size_t empty_size, size_t max_fitter_size = size_t(-1));
+	
+	void ensureNotInSizeIndexedOffsets(SizeBySizeMulti& mm, size_t offset, size_t size);
 
 	// Generates crypto key from password and salt
 	static Hpp::ByteV generateCryptoKey(std::string const& password, Hpp::ByteV const& salt);
