@@ -58,7 +58,7 @@ public:
 
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
-
+	
 	// Reduces file size to minimum possible.
 	// Does nothing if journal exists.
 	void shrinkFileToMinimumPossible(void);
@@ -96,7 +96,7 @@ public:
 	bool verifyReferences(bool throw_exception = false);
 	bool verifyMetadatas(bool throw_exception = false);
 	bool verifyRootNodeExists(bool throw_exception = false);
-
+	
 private:
 
 	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;
@@ -125,7 +125,7 @@ private:
 		Nodes::Type type;
 	};
 	typedef std::vector< NodeInfo > NodeInfos;
-
+	
 	Useroptions useroptions;
 
 	FileIO io;
@@ -267,12 +267,12 @@ private:
 	// case, if next data entry is already there and starts right after
 	// this, or if this is the last data entry. begin is in absolute form.
 	// Data must be already compressed.
-	void writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after);
+	void writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint64_t empty_space_after);
 
 	// Writes header + size bytes. You must set try_to_join_to_next_dataentry
 	// to false, if there is no real data entry after this, because otherwise
 	// it gets corrupted data.
-	void writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry);
+	void writeEmpty(uint64_t begin, uint64_t size, bool try_to_join_to_next_dataentry);
 
 	// Clears specific node. Marks it as empty
 	// to data section and to metadata section.
@@ -302,6 +302,11 @@ private:
 
 	// Get position of specific section in absolute format
 	size_t getSectionBegin(Section sec) const;
+
+	// Does actual writing of empties. This function ensures that
+	// very big amounts of empty bytes are divided into multiple
+	// Dataentries. "size" includes also headers.
+	void doWriteEmpty(uint64_t begin, uint64_t size);
 
 	// Moves specific non-empty data entry to another place. Previous
 	// empty data entries are needed, so they can be grown/shrinken.

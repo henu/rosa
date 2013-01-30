@@ -471,7 +471,7 @@ void Archive::removePossibleOrphans(void)
 
 void Archive::optimizeMetadata(void)
 {
-// TODO: Balance search tree!
+	// TODO: Balance search tree!
 }
 
 void Archive::shrinkFileToMinimumPossible(void)
@@ -501,7 +501,7 @@ Nodes::Dataentry Archive::getDataentry(uint64_t loc, bool read_data, bool extrac
 	Hpp::ByteV de_header = io.readPart(loc, Nodes::Dataentry::HEADER_SIZE);
 	Nodes::Dataentry result(de_header);
 	if (loc + Nodes::Dataentry::HEADER_SIZE + result.size > datasec_end) {
-		throw Hpp::Exception("Invalid data entry! Its size seems to overflow beyond data section!");
+		throw Hpp::Exception("Invalid data entry! Its size (" + Hpp::sizeToStr(result.size) + ") seems to overflow beyond data section end (" + Hpp::sizeToStr(datasec_end) + ")!");
 	}
 	if (read_data && !result.empty) {
 		result.data = io.readPart(loc + Nodes::Dataentry::HEADER_SIZE, result.size);
@@ -605,7 +605,7 @@ bool Archive::verifyDataentriesAreValid(bool throw_exception)
 		catch (Hpp::Exception const& e)
 		{
 			if (throw_exception) {
-				throw Hpp::Exception("Unable to load dataentry! Reason: " + std::string(e.what()));
+				throw Hpp::Exception("Unable to load dataentry at " + Hpp::sizeToStr(check_loc) + "! Reason: " + std::string(e.what()));
 			}
 			return false;
 		}
@@ -1419,7 +1419,7 @@ void Archive::writeRootRefAndCounts(void)
 	io.writeChunk(getSectionBegin(SECTION_ROOT_REF_AND_SIZES), data);
 }
 
-void Archive::writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint32_t empty_space_after)
+void Archive::writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data, uint64_t empty_space_after)
 {
 	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + data.size() + empty_space_after <= datasec_end, "Trying to write data after datasection!");
 
@@ -1430,11 +1430,11 @@ void Archive::writeData(uint64_t begin, Nodes::Type type, Hpp::ByteV const& data
 
 	if (empty_space_after > 0) {
 		HppAssert(empty_space_after >= Nodes::Dataentry::HEADER_SIZE, "Empty after data must be zero, or at least four!");
-		io.writeChunk(begin + Nodes::Dataentry::HEADER_SIZE + data.size(), Hpp::uInt32ToByteV(((empty_space_after - Nodes::Dataentry::HEADER_SIZE) & Nodes::Dataentry::MASK_DATASIZE) | Nodes::Dataentry::MASK_EMPTY));
+		doWriteEmpty(begin + Nodes::Dataentry::HEADER_SIZE + data.size(), empty_space_after);
 	}
 }
 
-void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next_dataentry)
+void Archive::writeEmpty(uint64_t begin, uint64_t size, bool try_to_join_to_next_dataentry)
 {
 	HppAssert(begin + Nodes::Dataentry::HEADER_SIZE + size <= datasec_end, "Trying to write empty after datasection!");
 
@@ -1452,8 +1452,7 @@ void Archive::writeEmpty(uint64_t begin, uint32_t size, bool try_to_join_to_next
 		}
 	}
 
-	Hpp::ByteV header = Hpp::uInt32ToByteV((size & Nodes::Dataentry::MASK_DATASIZE) | Nodes::Dataentry::MASK_EMPTY);
-	io.writeChunk(begin, header);
+	doWriteEmpty(begin, size + Nodes::Dataentry::HEADER_SIZE);
 }
 
 void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_loc)
@@ -2000,6 +1999,40 @@ size_t Archive::getSectionBegin(Section sec) const
 	return 0;
 }
 
+void Archive::doWriteEmpty(uint64_t begin, uint64_t size)
+{
+	HppAssert(begin + size <= datasec_end, "Trying to write empty after datasection!");
+	
+	// Write in parts, because dataentry size is small (only 29 bits).
+	while (size > 0) {
+		HppAssert(size == 0 || size >= Nodes::Dataentry::HEADER_SIZE, "Too small amount of empty!");
+		size_t chunk_size; // This does not include header
+		// Rest of empty fit to one Dataentry
+		if (size - Nodes::Dataentry::HEADER_SIZE <= Nodes::Dataentry::MASK_DATASIZE) {
+			chunk_size = size - Nodes::Dataentry::HEADER_SIZE;
+		}
+		// One full Dataentry, and there is still
+		// enough bytes for more Dataentries
+		else if (size >= uint64_t(Nodes::Dataentry::HEADER_SIZE * 2) + uint64_t(Nodes::Dataentry::MASK_DATASIZE)) {
+			chunk_size = Nodes::Dataentry::MASK_DATASIZE;
+		}
+		// There is too much bytes for one Dataentry, and too little
+		// bytes for any of the remaining two to be full.
+		else {
+			HppAssert(size >= Nodes::Dataentry::HEADER_SIZE * 2, "Fail!");
+			chunk_size = size - Nodes::Dataentry::HEADER_SIZE * 2;
+		}
+
+		Hpp::ByteV header = Hpp::uInt32ToByteV((chunk_size & Nodes::Dataentry::MASK_DATASIZE) | Nodes::Dataentry::MASK_EMPTY);
+		io.writeChunk(begin, header);
+
+		HppAssert(size >= chunk_size + Nodes::Dataentry::HEADER_SIZE, "Invalid empty chunk size!");
+		size -= chunk_size + Nodes::Dataentry::HEADER_SIZE;
+		begin += chunk_size + Nodes::Dataentry::HEADER_SIZE;
+	}
+}
+
+// TODO: Rewrite this function!
 void Archive::moveData(uint64_t src, uint64_t dest,
                        uint64_t empty_begin_src, uint64_t empty_begin_dest)
 {
@@ -2070,7 +2103,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 		if (empty_space_after_src < 0) {
 			empty_space_after_dest = -1;
 		} else if (src > dest) {
-			empty_space_after_dest = empty_space_after_src;
+			empty_space_after_dest = empty_space_after_src + (src - dest);
 		} else {
 			empty_space_after_dest = empty_space_after_src - (dest - src);
 		}
@@ -2111,13 +2144,12 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	if (original_datasec_end != datasec_end) {
 		// Inform FileIO about new data end
 		io.setEndOfData(datasec_end);
-
 		writeRootRefAndCounts();
 	}
 
 	// Do writes
-	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+	io.deinitWrite();
 }
 
 void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& sources)
