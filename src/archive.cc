@@ -577,6 +577,7 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 							// No perfect fit could be found, so move next Dataentry to
 							// the beginning of this empty space. Keep doing this as
 							// long the empty space after moved Dataentry remains same.
+// TODO: It would be still good idea to move as many here as possible!
 // TODO: What if next is end of data section?
 							do {
 								size_t moved_de_ofs = empty_begin + empty_size;
