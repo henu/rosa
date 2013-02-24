@@ -1027,9 +1027,11 @@ void Archive::loadStateFromFile(std::string const& password)
 	}
 
 	// Version
+	uint8_t version;
 	try {
 		Hpp::ByteV version_bytev = io.readPart(getSectionBegin(SECTION_VERSION), 1, true);
-		if (version_bytev[0] != 0) {
+		version = version_bytev[0];
+		if (version != 0) {
 			throw 0xbeef;
 		}
 	}
@@ -1037,7 +1039,7 @@ void Archive::loadStateFromFile(std::string const& password)
 		throw Hpp::Exception("Version of archive is not supported!");
 	}
 
-	// Do this only if crypto key is not set yet
+	// Do this only if crypto key is not yet set
 	if (crypto_key.empty()) {
 
 		// Crypto flag and possible salt
