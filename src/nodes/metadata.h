@@ -6,7 +6,6 @@
 #include <hpp/cast.h>
 #include <hpp/bytev.h>
 #include <hpp/assert.h>
-#include <hpp/random.h>
 #include <ostream>
 
 namespace Nodes
