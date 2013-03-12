@@ -39,8 +39,6 @@ void Archive::open(Hpp::Path const& path, std::string const& password)
 	closeAndOpenFile(path);
 
 	loadStateFromFile(password);
-
-	HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
 }
 
 void Archive::create(Hpp::Path const& path, std::string const& password)
@@ -1087,7 +1085,7 @@ void Archive::loadStateFromFile(std::string const& password)
 	nodes_size = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE]);
 	searchtree_begin = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 8]);
 	datasec_end = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 16]);
-
+	
 	// Inform FileIO about new data end
 	io.setEndOfData(datasec_end);
 
@@ -2003,13 +2001,14 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 		writeMetadata(parent, parent_loc);
 	}
 
-	// Prepare to update end of data section
+	// End of data section might have changed, but the number
+	// of nodes has changed for sure, so write these to file.
 	if (original_datasec_end != datasec_end) {
 		// Inform FileIO about new data end
 		io.setEndOfData(datasec_end);
-
-		writeRootRefAndCounts();
 	}
+	writeRootRefAndCounts();
+
 	// Do writing
 	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
