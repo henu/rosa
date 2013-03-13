@@ -136,7 +136,7 @@ private:
 
 	FileIO io;
 
-	// Crypto stuff
+	// If "crypto_key" is empty, then it means encryption is not enabled.
 	Hpp::ByteV crypto_key;
 
 	// Reference to root node

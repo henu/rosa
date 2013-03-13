@@ -88,6 +88,7 @@ private:
 	std::ios_base::openmode file_openmode;
 	Hpp::Path file_path;
 
+	// If "crypto_key" is empty, then it means encryption is not enabled.
 	Hpp::ByteV crypto_key;
 
 	// The position where all of data (except journal) ends.

@@ -1,6 +1,7 @@
 #include "fileio.h"
 
 #include "options.h"
+#include "misc.h"
 
 #ifdef ENABLE_PROFILER
 #include <hpp/profiler.h>
@@ -387,9 +388,9 @@ void FileIO::writeJournalflag(bool journal_exists)
 {
 	Hpp::ByteV flag_serialized;
 	if (journal_exists) {
-		flag_serialized.push_back(Hpp::randomInt(0x80, 0xff));
+		flag_serialized.push_back(secureRandomInt(0x80, 0xff, !crypto_key.empty()));
 	} else {
-		flag_serialized.push_back(Hpp::randomInt(0, 0x7f));
+		flag_serialized.push_back(secureRandomInt(0, 0x7f, !crypto_key.empty()));
 	}
 
 	writeToDisk(getJournalFlagLocation(), flag_serialized);
@@ -449,9 +450,9 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 			Writecachechunk const& chunk = writecache_it->second;
 			journal_srz += Hpp::uInt64ToByteV(offset);
 			if (chunk.encrypt) {
-				journal_srz.push_back(Hpp::randomInt(0x80, 0xff));
+				journal_srz.push_back(secureRandomInt(0x80, 0xff, !crypto_key.empty()));
 			} else {
-				journal_srz.push_back(Hpp::randomInt(0, 0x7f));
+				journal_srz.push_back(secureRandomInt(0, 0x7f, !crypto_key.empty()));
 			}
 			journal_srz += Hpp::uInt32ToByteV(chunk.data.size());
 			journal_srz += chunk.data;

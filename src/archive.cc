@@ -6,6 +6,7 @@
 #include "exceptions/notfound.h"
 #include "exceptions/alreadyexists.h"
 #include "options.h"
+#include "misc.h"
 
 #ifdef ENABLE_PROFILER
 #include <hpp/profiler.h>
@@ -1282,8 +1283,10 @@ size_t Archive::findEmptyData(size_t size, ssize_t prevent_results_before)
 
 	// If there are any nodes, then search empty data among them first.
 	if (nodes_size > 0) {
-		// First pick random metadata. The position of its data is
-		// used as a starting position for seeking an empty space.
+		// First pick random metadata. The position of its data is used
+		// as a starting position for seeking an empty space. Secure
+		// source for random is not used because behaviour of program
+		// is needed to be same every time for debugging purposes.
 		size_t metadata_loc = Hpp::randomInt(0, nodes_size - 1);
 
 		uint64_t search = getNodeMetadata(metadata_loc).data_loc;
@@ -1510,9 +1513,9 @@ void Archive::writeOrphanNodesFlag(bool orphans_exists)
 {
 	Hpp::ByteV flag_serialized;
 	if (orphans_exists) {
-		flag_serialized.push_back(Hpp::randomInt(128, 255));
+		flag_serialized.push_back(secureRandomInt(0x80, 0xff, !crypto_key.empty()));
 	} else {
-		flag_serialized.push_back(Hpp::randomInt(0, 127));
+		flag_serialized.push_back(secureRandomInt(0, 0x7f, !crypto_key.empty()));
 	}
 
 	io.writeChunk(getSectionBegin(SECTION_ORPHAN_NODES_FLAG), flag_serialized);
@@ -2515,20 +2518,23 @@ void Archive::findRandomDataentries(SizeBySize& result, size_t max_to_find)
 {
 	result.clear();
 	while (result.size() < max_to_find) {
-		size_t metadata_i = rand() % nodes_size;
-		size_t metadata_i_original = metadata_i;
-		Nodes::Metadata metadata = getMetadata(metadata_i);
+		// Secure source for random is not used because
+		// behaviour of program is needed to be same
+		// every time for debugging purposes.
+		size_t metadata_loc = Hpp::randomInt(0, nodes_size - 1);
+		size_t metadata_loc_original = metadata_loc;
+		Nodes::Metadata metadata = getMetadata(metadata_loc);
 		// If dataentry of this metadata is already
 		// loaded, then try next metadata
 		bool all_metadatas_tried = false;
 		while (result.find(metadata.data_loc) != result.end()) {
-			++ metadata_i;
-			if (metadata_i >= nodes_size) metadata_i = 0;
-			if (metadata_i == metadata_i_original) {
+			++ metadata_loc;
+			if (metadata_loc >= nodes_size) metadata_loc = 0;
+			if (metadata_loc == metadata_loc_original) {
 				all_metadatas_tried = true;
 				break;
 			}
-			metadata = getMetadata(metadata_i);
+			metadata = getMetadata(metadata_loc);
 		}
 		if (all_metadatas_tried) {
 			break;

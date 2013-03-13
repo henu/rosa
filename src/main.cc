@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <set>
+#include <hpp/sha256hasher.h>
 
 size_t stringToCachesize(std::string const& str);
 
@@ -19,7 +20,18 @@ void run(int argc, char** argv)
 	// Maximum optimizing delay when optimization is not requested
 	Hpp::Delay const MAXIMUM_OPTIMIZING_DELAY = Hpp::Delay::mins(5);
 
-	srand(time(NULL));
+	// Use arguments to initialize random number generator. This helps
+	// program to behave in same way every time it is ran in exactly same
+	// conditions (i.e. archive file in same state, arguments same, etc.).
+	// This is needed when debugging.
+	Hpp::Sha256Hasher seeder;
+	for (int arg_id = 1; arg_id < argc; ++ arg_id) {
+		std::string arg = std::string(argv[arg_id]);
+		seeder.addData(arg);
+	}
+	Hpp::ByteV seeder_hash;
+	seeder.getHash(seeder_hash);
+	srand(Hpp::cStrToUInt32(&seeder_hash[0]));
 
 	#ifdef ENABLE_PROFILER
 	Hpp::Profiler prof("other");
