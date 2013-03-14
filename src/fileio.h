@@ -1,6 +1,8 @@
 #ifndef FILEIO_H
 #define FILEIO_H
 
+#include "useroptions.h"
+
 #include <hpp/path.h>
 #include <hpp/bytev.h>
 #include <fstream>
@@ -13,11 +15,7 @@ class FileIO
 
 public:
 
-	#ifdef ENABLE_FILEIO_CACHE
-	FileIO(size_t writecache_max_size, size_t readcache_max_size);
-	#else
-	FileIO(size_t writecache_max_size);
-	#endif
+	FileIO(Useroptions const& useroptions);
 	~FileIO(void);
 
 	// Opens file and closes old one if its open. Also resets everything.
@@ -84,6 +82,8 @@ private:
 	typedef std::map< uint64_t, Writecachechunk > Writecache;
 	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL, WAITING_MORE_WITHOUT_JOURNAL, WAITING_MORE_WITH_JOURNAL };
 
+	Useroptions useroptions;
+
 	std::fstream file;
 	std::ios_base::openmode file_openmode;
 	Hpp::Path file_path;
@@ -98,12 +98,10 @@ private:
 
 	Readcache readcache;
 	Readcachepriorities readcache_priors;
-	size_t readcache_max_size;
 	size_t readcache_total_size;
 
 	Writecache writecache;
 	WritecacheState writecache_state;
-	size_t writecache_max_size;
 	size_t writecache_total_size;
 	size_t writecache_data_end; // This tell what maximum data end has been
 

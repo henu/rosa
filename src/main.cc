@@ -48,6 +48,7 @@ void run(int argc, char** argv)
 	args.addAlias("-w", "--wcache");
 	args.addArgument("--rcache", "<SIZE>", "Sets readcache size. Appropriate optional suffixes are k, M and G, for example 10M");
 	args.addAlias("-r", "--rcache");
+	args.addArgument("--random-write-quit", "", "Randomly quit while writing to disk. This is for debugging purposes.");
 
 	// Options
 	enum Action {
@@ -126,6 +127,10 @@ void run(int argc, char** argv)
 			catch (Hpp::Exception const& e) {
 				throw Hpp::Exception("Unable to set read cache size! " + std::string(e.what()));
 			}
+
+		} else if (arg == "--random-write-quit") {
+
+			useroptions.randomly_quit_when_writing = true;
 
 		}
 	}

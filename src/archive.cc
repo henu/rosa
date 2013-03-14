@@ -23,11 +23,7 @@
 
 Archive::Archive(Useroptions const& useroptions) :
 useroptions(useroptions),
-#ifdef ENABLE_FILEIO_CACHE
-io(useroptions.writecache_size, useroptions.readcache_size),
-#else
-io(useroptions.writecache_size),
-#endif
+io(useroptions),
 nodes_size(0),
 searchtree_begin(0),
 datasec_end(0),

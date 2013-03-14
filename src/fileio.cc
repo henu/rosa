@@ -14,20 +14,11 @@
 #include <cstring>
 #include <algorithm>
 
-#ifdef ENABLE_FILEIO_CACHE
-FileIO::FileIO(size_t writecache_max_size, size_t readcache_max_size) :
-#else
-FileIO::FileIO(size_t writecache_max_size) :
-#endif
+FileIO::FileIO(Useroptions const& useroptions) :
+useroptions(useroptions),
 data_end(0),
-#ifdef ENABLE_FILEIO_CACHE
-readcache_max_size(readcache_max_size),
-#else
-readcache_max_size(0),
-#endif
 readcache_total_size(0),
 writecache_state(NOT_INITIALIZED),
-writecache_max_size(writecache_max_size),
 writecache_total_size(0),
 writecache_data_end(0),
 journal_exists(false)
@@ -242,7 +233,7 @@ void FileIO::deinitWrite(void)
 
 	// If size of writecache has exceeded its
 	// maximum limit, then write it immediately.
-	if (writecache_total_size > writecache_max_size) {
+	if (writecache_total_size > useroptions.writecache_size) {
 		writeWritecacheToDisk(writecache_state == INITIALIZED_WITH_JOURNAL);
 		writecache_state = NOT_INITIALIZED;
 	}
@@ -402,6 +393,10 @@ void FileIO::writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt)
 	Hpp::Profiler prof("FileIO::writeToDisk");
 	#endif
 
+	if (useroptions.randomly_quit_when_writing && rand() % 750 == 0) {
+		exit(999);
+	}
+
 	file.seekp(offset, std::ios_base::beg);
 	if (crypto_key.empty() || !encrypt) {
 		file.write((char const*)&data[0], data.size());
@@ -515,7 +510,7 @@ Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 #ifdef ENABLE_FILEIO_CACHE
 void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 {
-	if (chunk.size() >= readcache_max_size / 2) {
+	if (chunk.size() >= useroptions.readcache_size / 2) {
 		return;
 	}
 
@@ -561,7 +556,7 @@ void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 	readcache_total_size += chunk.size();
 
 	// If cache has grown too big, then remove oldest elements from it
-	while (readcache_total_size > readcache_max_size) {
+	while (readcache_total_size > useroptions.readcache_size) {
 		Readcache::iterator oldest = readcache_priors.back();
 		readcache_total_size -= oldest->second->data.size();
 		delete oldest->second;

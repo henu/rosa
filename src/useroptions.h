@@ -15,12 +15,15 @@ struct Useroptions
 
 	size_t writecache_size;
 	size_t readcache_size;
+	
+	bool randomly_quit_when_writing;
 
 	inline Useroptions(void) :
 	verbose(NULL),
 	compression_level(Hpp::Compressor::DEFAULT_COMPRESSION),
 	writecache_size(DEFAULT_WRITECACHE_SIZE),
-	readcache_size(DEFAULT_READCACHE_SIZE)
+	readcache_size(DEFAULT_READCACHE_SIZE),
+	randomly_quit_when_writing(false)
 	{
 	}
 
