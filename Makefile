@@ -14,7 +14,8 @@ nodes/symlink.cc \
 archive.cc \
 archiver.cc \
 fileio.cc \
-main.cc
+main.cc \
+misc.cc
 
 OBJ = $(SRC:%.cc=src/%.o)
 
