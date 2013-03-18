@@ -15,7 +15,7 @@ class FileIO
 
 public:
 
-	FileIO(Useroptions const& useroptions);
+	FileIO(bool read_write_mode, Useroptions const& useroptions);
 	~FileIO(void);
 
 	// Opens file and closes old one if its open. Also resets everything.
@@ -72,6 +72,7 @@ private:
 	{
 		Hpp::ByteV data;
 		Readcachepriorities::iterator prior_it;
+		bool prevent_releasing;
 	};
 
 	struct Writecachechunk
@@ -82,6 +83,7 @@ private:
 	typedef std::map< uint64_t, Writecachechunk > Writecache;
 	enum WritecacheState { NOT_INITIALIZED, INITIALIZED_WITHOUT_JOURNAL, INITIALIZED_WITH_JOURNAL, WAITING_MORE_WITHOUT_JOURNAL, WAITING_MORE_WITH_JOURNAL };
 
+	bool read_write_mode;
 	Useroptions useroptions;
 
 	std::fstream file;
@@ -130,15 +132,12 @@ private:
 
 	// Stores given chunk to cache. Also clears anything
 	// that is even partly overlapping this new data.
-	#ifdef ENABLE_FILEIO_CACHE
-	void storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk);
-	#endif
+	void storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk,
+	                      bool prevent_releasing_and_do_not_limit_storings);
 
 	// Moves specific chunk to the front, so it will be the last
 	// one that will be removed in case cache becomes full.
-	#ifdef ENABLE_FILEIO_CACHE
 	void moveToFrontInReadcache(Readcache::iterator& readcache_find);
-	#endif
 
 };
 

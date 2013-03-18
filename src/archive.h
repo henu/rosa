@@ -21,7 +21,7 @@ public:
 
 	typedef std::map< uint16_t, uint64_t > SearchtreeDepthAnalysis;
 
-	Archive(Useroptions const& useroptions);
+	Archive(bool read_write_mode, Useroptions const& useroptions);
 
 	// Opens existing archive. If archive is password protected,
 	// then you need to give non-empty password.

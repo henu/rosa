@@ -21,9 +21,9 @@
 #include <cstring>
 #include <set>
 
-Archive::Archive(Useroptions const& useroptions) :
+Archive::Archive(bool read_write_mode, Useroptions const& useroptions) :
 useroptions(useroptions),
-io(useroptions),
+io(read_write_mode, useroptions),
 nodes_size(0),
 searchtree_begin(0),
 datasec_end(0),

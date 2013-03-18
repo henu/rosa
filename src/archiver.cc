@@ -3,8 +3,10 @@
 #include "nodes/folder.h"
 #include "exceptions/alreadyexists.h"
 
-Archiver::Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions) :
-archive(useroptions)
+Archiver::Archiver(Hpp::Path const& path, std::string const& password,
+                   bool create_if_does_not_exist, bool read_write_mode,
+                   Useroptions const& useroptions) :
+archive(read_write_mode, useroptions)
 {
 	if (path.exists()) {
 		archive.open(path, password);
@@ -14,6 +16,16 @@ archive(useroptions)
 		}
 		archive.create(path, password);
 	}
+
+	// Journal is always fixed. In read only
+	// mode, it is fixed to read cache.
+	archive.finishPossibleInterruptedJournal();
+	
+	// Possible orphans are fixed only in read write mode
+	if (read_write_mode) {
+		archive.removePossibleOrphans();
+	}
+
 }
 
 void Archiver::printDebugInformation(std::ostream* strm)
@@ -149,12 +161,6 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 
 	archive.put(sources, snapshot_path);
 	archive.shrinkFileToMinimumPossible();
-}
-
-void Archiver::fixPossibleErrors(void)
-{
-	archive.finishPossibleInterruptedJournal();
-	archive.removePossibleOrphans();
 }
 
 void Archiver::optimize(Hpp::Delay const& max_duration)

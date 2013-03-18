@@ -14,7 +14,8 @@
 #include <cstring>
 #include <algorithm>
 
-FileIO::FileIO(Useroptions const& useroptions) :
+FileIO::FileIO(bool read_write_mode, Useroptions const& useroptions) :
+read_write_mode(read_write_mode),
 useroptions(useroptions),
 data_end(0),
 readcache_total_size(0),
@@ -23,8 +24,6 @@ writecache_total_size(0),
 writecache_data_end(0),
 journal_exists(false)
 {
-// TODO: If archive contains journal and is opened in read only method, then fix journal here and store it to memory!
-// TODO: Also, make it so that FileIO is requested to open stuff either in read only mode, or read-write. And if journal needs to be fixed in read only mode, then it is somehow added to read cache with higher priority, so it wont get released ever.
 }
 
 FileIO::~FileIO(void)
@@ -99,13 +98,11 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	}
 
 	// Check if part exists in read cache
-	#ifdef ENABLE_FILEIO_CACHE
 	Readcache::iterator readcache_find = readcache.find(offset);
 	if (readcache_find != readcache.end() && readcache_find->second->data.size() == size) {
 		moveToFrontInReadcache(readcache_find);
 		return readcache_find->second->data;
 	}
-	#endif
 
 	// Prepare
 	Hpp::ByteV part;
@@ -115,9 +112,7 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 	file.read((char*)&part[0], size);
 	// Check encryption
 	if (do_not_decrypt || crypto_key.empty()) {
-		#ifdef ENABLE_FILEIO_CACHE
-		storeToReadcache(offset, part);
-		#endif
+		storeToReadcache(offset, part, false);
 		return part;
 	} else {
 		Hpp::ByteV part_decrypted;
@@ -125,9 +120,7 @@ Hpp::ByteV FileIO::readPart(size_t offset, size_t size, bool do_not_decrypt)
 		Hpp::AES256OFBCipher cipher(crypto_key, generateCryptoIV(offset), false);
 		cipher.decrypt(part);
 		cipher.readDecrypted(part_decrypted, true);
-		#ifdef ENABLE_FILEIO_CACHE
-		storeToReadcache(offset, part_decrypted);
-		#endif
+		storeToReadcache(offset, part_decrypted, false);
 		return part_decrypted;
 	}
 }
@@ -187,6 +180,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 		}
 		readcache_total_size -= readcache_find->second->data.size();
 		readcache_priors.erase(readcache_find->second->prior_it);
+		HppAssert(!readcache_find->second->prevent_releasing, "Trying to release chunk that is not suppose to be released!");
 		delete readcache_find->second;
 		readcache.erase(readcache_find);
 	}
@@ -198,6 +192,7 @@ void FileIO::writeChunk(size_t offset, Hpp::ByteV const& chunk, bool encrypt)
 		}
 		readcache_total_size -= readcache_find->second->data.size();
 		readcache_priors.erase(readcache_find->second->prior_it);
+		HppAssert(!readcache_find->second->prevent_releasing, "Trying to release chunk that is not suppose to be released!");
 		delete readcache_find->second;
 		readcache.erase(readcache_find);
 	}
@@ -269,18 +264,25 @@ bool FileIO::finishPossibleInterruptedJournal(void)
 	uint64_t journal_srz_size = Hpp::cStrToUInt32(&readPart(journal_loc, 4)[0]);
 	Hpp::ByteV journal_srz = readPart(journal_loc + 4, journal_srz_size);
 
-	// Deserialize journal
+	// Deserialize journal and write it to disk, or
+	// if in read only mode, to the read cache
 	Hpp::ByteV::const_iterator journal_srz_it = journal_srz.begin();
 	while (journal_srz_it != journal_srz.end()) {
 		uint64_t begin = Hpp::deserializeUInt64(journal_srz_it, journal_srz.end());
 		bool encrypt = Hpp::deserializeUInt8(journal_srz_it, journal_srz.end()) >= 0x80;
 		uint32_t size = Hpp::deserializeUInt32(journal_srz_it, journal_srz.end());
 		Hpp::ByteV data = Hpp::deserializeByteV(journal_srz_it, journal_srz.end(), size);
-		writeToDisk(begin, data, encrypt);
+		if (read_write_mode) {
+			writeToDisk(begin, data, encrypt);
+		} else {
+			storeToReadcache(begin, data, true);
+		}
 	}
 
-	// Finally clear journal flag
-	clearJournalFlag();
+	// Finally clear journal flag, but only if we are in read/write -mode.
+	if (read_write_mode) {
+		clearJournalFlag();
+	}
 
 	return true;
 
@@ -309,7 +311,6 @@ void FileIO::shrinkFileToMinimumPossible(void)
 	}
 
 	// Remove everything from read cache that is at removed area
-	#ifdef ENABLE_FILEIO_CACHE
 	Readcache::iterator readcache_it = readcache.begin();
 	while (readcache_it != readcache.end()) {
 		uint64_t chunk_begin = readcache_it->first;
@@ -317,6 +318,7 @@ void FileIO::shrinkFileToMinimumPossible(void)
 		if (chunk_begin + chunk->data.size() > data_end) {
 			// Reduce total size and delete actual chunk
 			readcache_total_size -= chunk->data.size();
+			HppAssert(!chunk->prevent_releasing, "Trying to release chunk that is not suppose to be released!");
 			delete chunk;
 			// Remove iterator from priorities
 			Readcachepriorities::iterator readcache_priors_find = std::find(readcache_priors.begin(), readcache_priors.end(), readcache_it);
@@ -328,7 +330,6 @@ void FileIO::shrinkFileToMinimumPossible(void)
 			++ readcache_it;
 		}
 	}
-	#endif
 }
 
 void FileIO::clearJournalFlag(void)
@@ -348,6 +349,8 @@ void FileIO::ensureArchiveSize(size_t size)
 	#ifndef NDEBUG
 	Hpp::toZero(write_buf, WRITE_BUF_SIZE);
 	#endif
+
+	HppAssert(read_write_mode, "Writing is only allowed in read/write -mode!");
 
 	file.seekp(0, std::ios_base::end);
 	size_t size_now = file.tellp();
@@ -392,6 +395,8 @@ void FileIO::writeToDisk(uint64_t offset, Hpp::ByteV const& data, bool encrypt)
 	#ifdef ENABLE_PROFILER
 	Hpp::Profiler prof("FileIO::writeToDisk");
 	#endif
+
+	HppAssert(read_write_mode, "Writing is only allowed in read/write -mode!");
 
 	if (useroptions.randomly_quit_when_writing && rand() % 750 == 0) {
 		exit(999);
@@ -485,16 +490,14 @@ void FileIO::writeWritecacheToDisk(bool use_journal)
 	clearJournalFlag();
 
 	// Clear writecache, but first move chunks to readcache
-	#ifdef ENABLE_FILEIO_CACHE
 	for (Writecache::const_iterator writecache_it = writecache.begin();
 	     writecache_it != writecache.end();
 	     ++ writecache_it) {
 		uint64_t offset = writecache_it->first;
 		Writecachechunk const& chunk = writecache_it->second;
 
-		storeToReadcache(offset, chunk.data);
+		storeToReadcache(offset, chunk.data, false);
 	}
-	#endif
 	writecache.clear();
 	writecache_total_size = 0;
 }
@@ -507,10 +510,11 @@ Hpp::ByteV FileIO::generateCryptoIV(size_t offset)
 	return result;
 }
 
-#ifdef ENABLE_FILEIO_CACHE
-void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
+void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk,
+                              bool prevent_releasing_and_do_not_limit_storings)
 {
-	if (chunk.size() >= useroptions.readcache_size / 2) {
+	if (!prevent_releasing_and_do_not_limit_storings &&
+	    chunk.size() >= useroptions.readcache_size / 2) {
 		return;
 	}
 
@@ -522,6 +526,7 @@ void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 		if (readcache_find->first >= end) {
 			break;
 		}
+		HppAssert(!readcache_find->second->prevent_releasing, "Trying to overwrite chunk that is not suppose to be released!");
 		readcache_total_size -= readcache_find->second->data.size();
 		readcache_priors.erase(readcache_find->second->prior_it);
 		delete readcache_find->second;
@@ -533,6 +538,7 @@ void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 		if (readcache_find->first + readcache_find->second->data.size() <= offset) {
 			break;
 		}
+		HppAssert(!readcache_find->second->prevent_releasing, "Trying to overwrite chunk that is not suppose to be released!");
 		readcache_total_size -= readcache_find->second->data.size();
 		readcache_priors.erase(readcache_find->second->prior_it);
 		delete readcache_find->second;
@@ -543,8 +549,10 @@ void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 	Readcachechunk* new_chunk = new Readcachechunk;
 	try {
 		new_chunk->data = chunk;
+		new_chunk->prevent_releasing = prevent_releasing_and_do_not_limit_storings;
 		std::pair< Readcache::iterator, bool > insert_result = readcache.insert(Readcache::value_type(offset, new_chunk));
 		HppAssert(insert_result.second, "There was already a value there!");
+// TODO: Chunk should not be set to highest priority if its releasing is allowed and there are some chunk whose releasing is prevented!
 		readcache_priors.push_front(insert_result.first);
 		new_chunk->prior_it = readcache_priors.begin();
 	}
@@ -557,11 +565,26 @@ void FileIO::storeToReadcache(uint64_t offset, Hpp::ByteV const& chunk)
 
 	// If cache has grown too big, then remove oldest elements from it
 	while (readcache_total_size > useroptions.readcache_size) {
-		Readcache::iterator oldest = readcache_priors.back();
-		readcache_total_size -= oldest->second->data.size();
-		delete oldest->second;
-		readcache.erase(oldest);
-		readcache_priors.pop_back();
+		// Search for oldest chunk whose releasing is allowed
+		Readcachepriorities::iterator readcache_priors_find = readcache_priors.end();
+		Readcache::iterator oldest_releasable = readcache.end();
+		while (readcache_priors_find != readcache_priors.begin()) {
+			-- readcache_priors_find;
+			if (!(*readcache_priors_find)->second->prevent_releasing) {
+				oldest_releasable = *readcache_priors_find;
+				break;
+			}
+		}
+		// If all were not releasable, then give up
+		if (oldest_releasable == readcache.end()) {
+			break;
+		}
+	
+		readcache_total_size -= oldest_releasable->second->data.size();
+		HppAssert(!oldest_releasable->second->prevent_releasing, "Trying to release chunk that is not suppose to be released!");
+		delete oldest_releasable->second;
+		readcache.erase(oldest_releasable);
+		readcache_priors.erase(readcache_priors_find);
 	}
 }
 
@@ -571,5 +594,3 @@ void FileIO::moveToFrontInReadcache(Readcache::iterator& readcache_find)
 	readcache_priors.push_front(readcache_find);
 	readcache_find->second->prior_it = readcache_priors.begin();
 }
-
-#endif

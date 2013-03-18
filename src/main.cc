@@ -384,10 +384,8 @@ void run(int argc, char** argv)
 		create_if_does_not_exist = false;
 	}
 
-	// First open archive
-	Archiver archiver(archive, password, create_if_does_not_exist, useroptions);
-
-	// In case of writes, fix possible errors first
+	// Check if archive is opened in read write mode
+	bool read_write_mode = false;
 	if (action == ACTION_PUT ||
 	    action == ACTION_REMOVE ||
 	    action == ACTION_MOVE ||
@@ -396,9 +394,12 @@ void run(int argc, char** argv)
 	    action == ACTION_DESTROY ||
 	    action == ACTION_RENAME ||
 	    action == ACTION_OPTIMIZE) {
-		archiver.fixPossibleErrors();
+		read_write_mode = true;
 	}
 
+
+	Archiver archiver(archive, password, create_if_does_not_exist, read_write_mode, useroptions);
+	
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
 		Hpp::Time start_time = Hpp::now();

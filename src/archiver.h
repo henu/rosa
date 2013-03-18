@@ -13,7 +13,9 @@ class Archiver
 public:
 
 	// If password protection is needed, then give non-empty password.
-	Archiver(Hpp::Path const& path, std::string const& password, bool create_if_does_not_exist, Useroptions const& useroptions);
+	Archiver(Hpp::Path const& path, std::string const& password,
+	         bool create_if_does_not_exist, bool read_write_mode,
+	         Useroptions const& useroptions);
 
 	// Prints debug information to standard output
 	void printDebugInformation(std::ostream* strm);
@@ -27,9 +29,6 @@ public:
 	// Archive query/and get functions
 	void get(Paths const& sources, Hpp::Path const& dest);
 	void list(Hpp::Path const& path, std::ostream* strm);
-
-	// Write possible interrupted journal and clean possible orphans.
-	void fixPossibleErrors(void);
 
 	// Optimizes archive. This means sorting metadata, filling empty
 	// gaps in arrays, etc. "max_duration" is just an estimation.
