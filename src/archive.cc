@@ -163,11 +163,13 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 // TODO: Ask here what to overwrite/discard/join/etc.!
 		readFileHierarchiesAsFolderChildren(new_children, src);
 
-		// Set the only child
-		HppAssert(new_children.size() == 1, "There should be exactly one child!");
-		new_folder.setChild(dest.getFilename(), new_children[0]);
-
-		root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
+		// Set the only child, if reading file hierarchy did not failed
+		if (!new_children.empty()) {
+			HppAssert(new_children.size() == 1, "There should be exactly one child!");
+			new_folder.setChild(dest.getFilename(), new_children[0]);
+	
+			root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
+		}
 
 	} else {
 		// Read file hierarchy as Children of Folder
@@ -175,20 +177,24 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 // TODO: Ask here what to overwrite/discard/join/etc.!
 		readFileHierarchiesAsFolderChildren(new_children, src);
 
-		new_folder.addChildren(new_children);
+		if (!new_children.empty()) {
+			new_folder.addChildren(new_children);
 
-		root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
+			root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
+		}
 	}
 
 	// Replace and clean old root
-	Hpp::ByteV old_root = root_ref;
-	replaceRootNode(root_now);
-	ssize_t metadata_loc = getNodeMetadataLocation(old_root);
-	HppAssert(metadata_loc >= 0, "Old root node not found!");
-	Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
-	if (metadata.refs == 0) {
-		HppAssert(old_root != root_ref, "Trying to remove root node!");
-		clearOrphanNodeRecursively(old_root, Nodes::TYPE_FOLDER);
+	if (!root_now.empty()) {
+		Hpp::ByteV old_root = root_ref;
+		replaceRootNode(root_now);
+		ssize_t metadata_loc = getNodeMetadataLocation(old_root);
+		HppAssert(metadata_loc >= 0, "Old root node not found!");
+		Nodes::Metadata metadata = getNodeMetadata(metadata_loc);
+		if (metadata.refs == 0) {
+			HppAssert(old_root != root_ref, "Trying to remove root node!");
+			clearOrphanNodeRecursively(old_root, Nodes::TYPE_FOLDER);
+		}
 	}
 
 	io.initWrite(false);
@@ -2303,7 +2309,6 @@ void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& resul
 
 	result.clear();
 
-// TODO: What if source has disappeared?
 	for (Paths::const_iterator sources_it = sources.begin();
 	     sources_it != sources.end();
 	     ++ sources_it) {
@@ -2311,7 +2316,9 @@ void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& resul
 
 		Hpp::ByteV source_hash;
 		Nodes::FsType source_fstype;
-		readFileHierarchy(source_hash, source_fstype, source);
+		if (!readFileHierarchy(source_hash, source_fstype, source)) {
+			continue;
+		}
 
 		std::string source_name = source.getFilename();
 		Nodes::FsMetadata source_fsmetadata = Nodes::FsMetadata(source);
@@ -2325,28 +2332,52 @@ void Archive::readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& resul
 	}
 }
 
-void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source)
+// TODO: This throws errors in case of living filesystem!
+bool Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source)
 {
 	if (useroptions.verbose) {
 		(*useroptions.verbose) << source.toString() << std::endl;
 	}
+	
+	// If type can not be found, then give up
+	Hpp::Path::Type source_type;
+	try {
+		source_type = source.getType();
+	}
+	catch ( ... ) {
+		return false;
+	}
 
 	// Symlink
 // TODO: Should symlinks be considered as normal, empty files with symlink target as metadata? This would be more multiplatform.
-	if (source.isLink()) {
-		Nodes::Symlink new_symlink(source.linkTarget());
+	if (source_type == Hpp::Path::SYMLINK) {
+		// If link target can not be got, then give up
+		Hpp::Path link_target;
+		try {
+			link_target = source.linkTarget();
+		}
+		catch ( ... ) {
+			return false;
+		}
+		Nodes::Symlink new_symlink(link_target);
 		spawnOrGetNode(&new_symlink);
 		result_hash = new_symlink.getHash();
 		result_fstype = Nodes::FSTYPE_SYMLINK;
-		return;
+		return true;
 	}
 
 	// Folder
-	if (source.isDir()) {
+	if (source_type == Hpp::Path::DIRECTORY) {
 		Nodes::Folder new_folder;
-		// Add children to Folder
+		// Add children to Folder. If children
+		// could not be got, then give up.
 		Hpp::Path::DirChildren children;
-		source.listDir(children);
+		try {
+			source.listDir(children);
+		}
+		catch ( ... ) {
+			return false;
+		}
 		for (Hpp::Path::DirChildren::const_iterator children_it = children.begin();
 		     children_it != children.end();
 		     ++ children_it) {
@@ -2362,26 +2393,22 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 				child_type = Nodes::FSTYPE_FILE;
 			} else if (child.type == Hpp::Path::DIRECTORY) {
 				child_type = Nodes::FSTYPE_FOLDER;
-			} else {
-				HppAssert(child.type == Hpp::Path::SYMLINK, "Wrong type!");
+			} else if (child.type == Hpp::Path::SYMLINK) {
 				child_type = Nodes::FSTYPE_SYMLINK;
+			}
+			// Ignore unknown type
+			else {
+				continue;
 			}
 
 			// Get hash and metadata and form Node from them.
 			Nodes::FsType dummy;
 			Hpp::ByteV child_hash;
 			Nodes::FsMetadata child_fsmetadata;
-			try {
-				readFileHierarchy(child_hash, dummy, child_path);
-				child_fsmetadata = Nodes::FsMetadata(child_path);
-			}
-			catch (Exceptions::NotFound) {
-				// This error is most likely caused by a living
-				// file system. Maybe user just removed some
-				// file, while backup was being ran. This is
-				// not a serious problem, so just ignore it.
+			if (!readFileHierarchy(child_hash, dummy, child_path)) {
 				continue;
 			}
+			child_fsmetadata = Nodes::FsMetadata(child_path);
 
 			// If there was not any problems, then add child
 			new_folder.setChild(child.name, child_type, child_hash, child_fsmetadata);
@@ -2391,16 +2418,23 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 		spawnOrGetNode(&new_folder);
 		result_hash = new_folder.getHash();
 		result_fstype = Nodes::FSTYPE_FOLDER;
-		return;
+		return true;
 	}
 
 	// File
-	if (source.isFile()) {
+	if (source_type == Hpp::Path::FILE) {
 		Nodes::File new_file;
 
 		// Convert file contents into datablocks.
 		// First open file and get its size.
 		std::ifstream source_file(source.toString().c_str(), std::ios_base::binary);
+		
+		// If file could not be opened, then give up
+		if (!source_file.is_open()) {
+			return false;
+		}
+		
+		// Get size of file
 		source_file.seekg(0, std::ios_base::end);
 		size_t source_file_left = source_file.tellg();
 		source_file.seekg(0, std::ios_base::beg);
@@ -2423,10 +2457,11 @@ void Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 		spawnOrGetNode(&new_file);
 		result_hash = new_file.getHash();
 		result_fstype = Nodes::FSTYPE_FILE;
-		return;
+		return true;
 	}
 
-	throw Hpp::Exception("Unable to archive " + source.toString() + " because it has invalid type!");
+	// If type is not known, then give up
+	return false;
 }
 
 void Archive::extractRecursively(Hpp::ByteV const& hash,

@@ -325,9 +325,11 @@ private:
 	// in archive, and returns those new Nodes as Children of Folder.
 	void readFileHierarchiesAsFolderChildren(Nodes::Folder::Children& result, Paths const& source);
 
-	// Reads file hierarchy and converts it to the Node(s)
-	// in archive. Returns hash of given file/folder/symlink and type.
-	void readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source);
+	// Reads file hierarchy and converts it to the Node(s) in archive.
+	// Returns true if everything went fine and false if file/symlink/dir
+	// could be opened. Normally this happens because user or some other
+	// program is modifying filesystem while rosa is running.
+	bool readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_fstype, Hpp::Path const& source);
 
 	// Extracts given Node to given target. If Node is Folder, then
 	// this function is called recursively for all of its children.
