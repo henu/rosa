@@ -1,7 +1,7 @@
 CC = g++
 
-#CFLAGS = -g -Wall -O2 -Wpointer-arith -Werror -ansi -pedantic -DENABLE_FILEIO_CACHE
-CFLAGS = -g -O3 -DENABLE_FILEIO_CACHE -DNDEBUG
+#CFLAGS = -g -Wall -O2 -Wpointer-arith -Werror -ansi -pedantic
+CFLAGS = -g -O3 -DNDEBUG
 
 LIBS = -lhpp `pkg-config --libs hpp`
 
