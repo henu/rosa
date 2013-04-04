@@ -1610,94 +1610,137 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 	uint64_t parent_loc = metadata.parent;
 	uint64_t child_small_loc = metadata.child_small;
 	uint64_t child_big_loc = metadata.child_big;
+	
+	// If there are no children at all
+	if (child_small_loc == Nodes::Metadata::NULL_REF &&
+	    child_big_loc == Nodes::Metadata::NULL_REF) {
 
-	// Pick one of childs to replace this Node in searchtree.
-	// 0 = No child found, 1 = smaller child, 2 = bigger child.
-	uint64_t child_selected_loc;
-	uint64_t child_not_selected_loc;
-	if (child_small_loc == Nodes::Metadata::NULL_REF) {
-		if (child_big_loc == Nodes::Metadata::NULL_REF) {
-			child_selected_loc = Nodes::Metadata::NULL_REF;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		} else {
-			child_selected_loc = child_big_loc;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		}
-	} else {
-		if (child_big_loc == Nodes::Metadata::NULL_REF) {
-			child_selected_loc = child_small_loc;
-			child_not_selected_loc = Nodes::Metadata::NULL_REF;
-		}
-		// If both children are present, then use "random" to decide
-		// which one will replace this Node. It is good idea to not
-		// use real randomness, because that makes debugging harder.
-// TODO: In future, check at which range all children and grand children of this removed node are. Then calculate average from this, and select the child that is nearer this average value! This will automatically do some balancing to the searchtree.
-		else if (metadata.hash.back() % 2 == 0) {
-			child_selected_loc = child_small_loc;
-			child_not_selected_loc = child_big_loc;
-		} else {
-			child_selected_loc = child_big_loc;
-			child_not_selected_loc = child_small_loc;
-		}
-	}
-
-	// Update reference from parent to possible replacing child.
-	if (parent_loc != Nodes::Metadata::NULL_REF) {
-		Nodes::Metadata parent = getNodeMetadata(parent_loc);
-		if (parent.child_small == metadata_loc) {
-			parent.child_small = child_selected_loc;
-		} else {
-			if (parent.child_big != metadata_loc) {
-				throw Hpp::Exception("Unable to clear node because reference to it could not be found from its parent in the searchtree!");
-			}
-			parent.child_big = child_selected_loc;
-		}
-		writeMetadata(parent, parent_loc);
-	}
-	// Update possible replacing child
-	Nodes::Metadata child_selected;
-	if (child_selected_loc != Nodes::Metadata::NULL_REF) {
-		child_selected = getNodeMetadata(child_selected_loc);
-		if (child_selected.parent != metadata_loc) {
-			throw Hpp::Exception("Unable to clear node because its child does not have the node as its parent in the searchtree!");
-		}
-		child_selected.parent = parent_loc;
-		writeMetadata(child_selected, child_selected_loc);
-
-		// If this child replaced first node of searchtree,
-		// then pointer to it must be updated
-		if (child_selected.parent == Nodes::Metadata::NULL_REF) {
-			searchtree_begin = child_selected_loc;
-		}
-
-		// Update the possible child that was not selected for replacement
-		if (child_not_selected_loc != Nodes::Metadata::NULL_REF) {
-			// Find proper location for the unselect child. It
-			// will be a child or grand child of selected child.
-			Nodes::Metadata child_not_selected = getNodeMetadata(child_not_selected_loc);
-			Nodes::Metadata new_parent;
-			uint64_t new_parent_loc;
-			uint8_t find_type = findMetadataFromSearchtree(&new_parent, &new_parent_loc, child_not_selected.hash, child_selected_loc);
-			HppAssert(find_type != 0, "Child already found!");
-			// Update this new parent. This new parent may
-			// be selected child, which should already have
-			// modifications. In this case, read it from the
-			// container of modified metadata entries.
-			if (find_type == 1) {
-				HppAssert(new_parent.child_small == Nodes::Metadata::NULL_REF, "There is already a child!");
-				new_parent.child_small = child_not_selected_loc;
+		// Remove reference to the removed node from possible parent
+		if (parent_loc != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata parent = getNodeMetadata(parent_loc);
+			if (parent.child_small == metadata_loc) {
+				parent.child_small = Nodes::Metadata::NULL_REF;
 			} else {
-				HppAssert(new_parent.child_big == Nodes::Metadata::NULL_REF, "There is already a child!");
-				new_parent.child_big = child_not_selected_loc;
+				if (parent.child_big != metadata_loc) {
+					throw Hpp::Exception("Unable to clear node because reference to it could not be found from its parent in the searchtree!");
+				}
+				parent.child_big = Nodes::Metadata::NULL_REF;
 			}
-			writeMetadata(new_parent, new_parent_loc);
-			// Update also the non-selected child
-			if (child_not_selected.parent != metadata_loc) {
-				throw Hpp::Exception("Unable to clear node because its child does not have the node as its parent in the searchtree!");
-			}
-			child_not_selected.parent = new_parent_loc;
-			writeMetadata(child_not_selected, child_not_selected_loc);
+			writeMetadata(parent, parent_loc);
 		}
+	
+	}
+	// If there is only one child
+	else if (child_small_loc == Nodes::Metadata::NULL_REF ||
+	         child_big_loc == Nodes::Metadata::NULL_REF) {
+
+		uint64_t child_loc;
+		if (child_small_loc != Nodes::Metadata::NULL_REF) child_loc = child_small_loc;
+		else child_loc = child_big_loc;
+
+		// Set parent of the child that will replace the removed one
+		Nodes::Metadata child = getNodeMetadata(child_loc);
+		child.parent = parent_loc;
+		writeMetadata(child, child_loc);
+		
+		// Remove reference to the removed node from possible parent
+		if (parent_loc != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata parent = getNodeMetadata(parent_loc);
+			if (parent.child_small == metadata_loc) {
+				parent.child_small = child_loc;
+			} else {
+				if (parent.child_big != metadata_loc) {
+					throw Hpp::Exception("Unable to clear node because reference to it could not be found from its parent in the searchtree!");
+				}
+				parent.child_big = child_loc;
+			}
+			writeMetadata(parent, parent_loc);
+		}
+		// The removed node does not have parent. It means it is
+		// the root of search tree. Update that root now.
+		else {
+			searchtree_begin = child_loc;
+		}
+
+	}
+	// There are two children
+	else {
+	
+		// Find next node after removed one (i.e. the
+		// smallest node from all the bigger ones)
+		uint64_t smallest_loc = child_big_loc;
+		Nodes::Metadata smallest;
+		while ((smallest = getNodeMetadata(smallest_loc)).child_small != Nodes::Metadata::NULL_REF) {
+			smallest_loc = smallest.child_small;
+		}
+		
+		// The smallest has only one or zero children,
+		// so it is easy to remove from tree.
+		HppAssert(smallest.child_small == Nodes::Metadata::NULL_REF, "Unexpected child!");
+		if (smallest.child_big != Nodes::Metadata::NULL_REF) {
+			// First update child of smallest
+			Nodes::Metadata child = getNodeMetadata(smallest.child_big);
+			HppAssert(child.parent == smallest_loc, "Fail!");
+			child.parent = smallest.parent;
+			writeMetadata(child, smallest.child_big);
+		}
+		
+		// Then update parent. This may/ update the removed node.
+		HppAssert(smallest.parent != Nodes::Metadata::NULL_REF, "Smallest should have parent!");
+		Nodes::Metadata parent = getNodeMetadata(smallest.parent);
+		// Check if smallest is smaller or bigger child of
+		// parent. This needs to be done in case smallest
+		// is direct child of removed node.
+		if (parent.child_small == smallest_loc) {
+			parent.child_small = smallest.child_big;
+		} else {
+			HppAssert(parent.child_big == smallest_loc, "Fail!");
+			parent.child_big = smallest.child_big;
+		}
+		writeMetadata(parent, smallest.parent);
+		
+		// Reload metadata, in case it has changed
+		Nodes::Metadata metadata2 = getNodeMetadata(metadata_loc);
+		
+		// Replace the removed node with the smallest
+		// node. First update the replacing node.
+		HppAssert(metadata2.parent == parent_loc, "Unexpected parent change!");
+		HppAssert(metadata2.child_small == child_small_loc, "Unexpected small child change!");
+		smallest.parent = parent_loc;
+		smallest.child_small = child_small_loc;
+		smallest.child_big = metadata2.child_big;
+		writeMetadata(smallest, smallest_loc);
+		// Replace reference to the removed node from possible parent
+		if (parent_loc != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata parent = getNodeMetadata(parent_loc);
+			if (parent.child_small == metadata_loc) {
+				parent.child_small = smallest_loc;
+			} else {
+				if (parent.child_big != metadata_loc) {
+					throw Hpp::Exception("Unable to clear node because reference to it could not be found from its parent in the searchtree!");
+				}
+				parent.child_big = smallest_loc;
+			}
+			writeMetadata(parent, parent_loc);
+		}
+		// The removed node does not have parent. It means it is
+		// the root of search tree. Update that root now.
+		else {
+			searchtree_begin = smallest_loc;
+		}
+		// Replace reference to the removed node from possible smaller child
+		if (child_small_loc != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata small_child = getNodeMetadata(child_small_loc);
+			small_child.parent = smallest_loc;
+			writeMetadata(small_child, child_small_loc);
+		}
+		// Replace reference to the removed node from possible bigger child
+		if (smallest.child_big != Nodes::Metadata::NULL_REF) {
+			Nodes::Metadata big_child = getNodeMetadata(smallest.child_big);
+			big_child.parent = smallest_loc;
+			writeMetadata(big_child, smallest.child_big);
+		}
+	
 	}
 
 	// If this was not last metadata, then the
