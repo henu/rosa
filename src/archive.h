@@ -93,11 +93,11 @@ public:
 	// Verifier functions. Return false on error, or throw exception if
 	// requested. Note, that exception will be thrown anyway, if other
 	// things fail than those that are tested right now.
-	bool verifyDataentriesAreValid(bool throw_exception = false);
-	bool verifyNoDoubleMetadatas(bool throw_exception = false);
-	bool verifyReferences(bool throw_exception = false);
-	bool verifyMetadatas(bool throw_exception = false);
-	bool verifyRootNodeExists(bool throw_exception = false);
+	bool verifyDataentriesAreValid(bool throw_exception);
+	bool verifyNoDoubleMetadatas(bool throw_exception);
+	bool verifyReferences(bool throw_exception, bool fix_errors = false);
+	bool verifyMetadatas(bool throw_exception);
+	bool verifyRootNodeExists(bool throw_exception);
 	
 private:
 
@@ -183,8 +183,7 @@ private:
 	// Returns Metadata of specific node. Throws Hpp::Exception
 	// if node does not exist. If loc is given, then return
 	// value of getMetadataLocation is stored there
-// TODO: Change type of loc to uint64_t!
-	Nodes::Metadata getNodeMetadata(Hpp::ByteV const& node_hash, ssize_t* loc = NULL);
+	Nodes::Metadata getNodeMetadata(Hpp::ByteV const& node_hash, uint64_t* loc = NULL);
 	Nodes::Metadata getNodeMetadata(uint64_t metadata_loc);
 
 	// Returns uncompressed data of specific node.

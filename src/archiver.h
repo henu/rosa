@@ -35,7 +35,7 @@ public:
 	void optimize(Hpp::Delay const& max_duration);
 
 	// Verfies everything is okay
-	void verify(Useroptions const& useroptions);
+	void verify(Useroptions const& useroptions, bool fix_errors);
 
 private:
 

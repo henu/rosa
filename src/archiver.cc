@@ -170,7 +170,7 @@ void Archiver::optimize(Hpp::Delay const& max_duration)
 	archive.shrinkFileToMinimumPossible();
 }
 
-void Archiver::verify(Useroptions const& useroptions)
+void Archiver::verify(Useroptions const& useroptions, bool fix_errors)
 {
 	if (useroptions.verbose) *useroptions.verbose << "Verifying dataentries are valid..." << std::endl;
 	archive.verifyDataentriesAreValid(true);
@@ -181,7 +181,7 @@ void Archiver::verify(Useroptions const& useroptions)
 	if (useroptions.verbose) *useroptions.verbose << "Verifying root node exists..." << std::endl;
 	archive.verifyRootNodeExists(true);
 	if (useroptions.verbose) *useroptions.verbose << "Verifying references..." << std::endl;
-	archive.verifyReferences(true);
+	archive.verifyReferences(true, fix_errors);
 	if (useroptions.verbose) *useroptions.verbose << "Done!" << std::endl;
 }
 

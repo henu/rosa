@@ -65,6 +65,7 @@ void run(int argc, char** argv)
 		ACTION_RESTORE,
 		ACTION_DEBUG,
 		ACTION_VERIFY,
+		ACTION_FIX,
 		ACTION_OPTIMIZE
 	};
 	std::string password;
@@ -333,6 +334,17 @@ void run(int argc, char** argv)
 			if (args.extraargsLeft() > 0) {
 				throw Hpp::Exception("Too many arguments!");
 			}
+		} else if (earg_action == "fix") {
+			action = ACTION_FIX;
+			// Verify number of arguments
+			if (args.extraargsLeft() == 0) {
+				throw Hpp::Exception("Archive file is missing!");
+			}
+			// Read arguments
+			archive = Hpp::Path(args.popExtraargument());
+			if (args.extraargsLeft() > 0) {
+				throw Hpp::Exception("Too many arguments!");
+			}
 		} else if (earg_action == "optimize") {
 			action = ACTION_OPTIMIZE;
 			// Verify number of arguments
@@ -367,6 +379,7 @@ void run(int argc, char** argv)
 		std::cout << "\tExtra commands:" << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " debug <ARCHIVE>", "\t\t") << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " verify <ARCHIVE>", "\t\t") << std::endl;
+		std::cout << Hpp::wrapWords(program_name + " fix <ARCHIVE>", "\t\t") << std::endl;
 		std::cout << Hpp::wrapWords(program_name + " optimize <ARCHIVE>", "\t\t") << std::endl;
 		std::cout << "Global options:" << std::endl;
 		std::cout << args.getHelp(Hpp::Arguments::INC_ALL, "", "\t") << std::endl;
@@ -380,6 +393,7 @@ void run(int argc, char** argv)
 	    action == ACTION_RESTORE ||
 	    action == ACTION_DEBUG ||
 	    action == ACTION_VERIFY ||
+	    action == ACTION_FIX ||
 	    action == ACTION_OPTIMIZE) {
 		create_if_does_not_exist = false;
 	}
@@ -393,6 +407,7 @@ void run(int argc, char** argv)
 	    action == ACTION_SNAPSHOT ||
 	    action == ACTION_DESTROY ||
 	    action == ACTION_RENAME ||
+	    action == ACTION_FIX ||
 	    action == ACTION_OPTIMIZE) {
 		read_write_mode = true;
 	}
@@ -456,7 +471,9 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation(&std::cout);
 	} else if (action == ACTION_VERIFY) {
-		archiver.verify(useroptions);
+		archiver.verify(useroptions, false);
+	} else if (action == ACTION_FIX) {
+		archiver.verify(useroptions, true);
 	} else if (action == ACTION_OPTIMIZE) {
 		archiver.optimize(Hpp::Delay::days(9999));
 	}

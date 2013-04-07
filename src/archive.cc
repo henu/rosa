@@ -110,7 +110,7 @@ void Archive::create(Hpp::Path const& path, std::string const& password)
 	// Flush writes
 	io.deinitWrite();
 
-	HppAssert(verifyReferences(), "Reference counts have failed!");
+	HppAssert(verifyReferences(false), "Reference counts have failed!");
 }
 
 void Archive::put(Paths const& src, Hpp::Path const& dest)
@@ -423,7 +423,7 @@ void Archive::finishPossibleInterruptedJournal(void)
 		// Because state of file has changed, it needs to be loaded again.
 		loadStateFromFile("");
 
-		HppAssert(verifyDataentriesAreValid(), "Data is failed after applying of interrupted journal!");
+		HppAssert(verifyDataentriesAreValid(false), "Data is failed after applying of interrupted journal!");
 
 	}
 }
@@ -782,7 +782,7 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 	return true;
 }
 
-bool Archive::verifyReferences(bool throw_exception)
+bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 {
 	size_t metadata_ofs = 0;
 	while (metadata_ofs < nodes_size) {
@@ -798,7 +798,7 @@ bool Archive::verifyReferences(bool throw_exception)
 		// Go all nodes through, and calculate how many
 		// references there are to the selected ones
 		std::map< Hpp::ByteV, uint32_t > refs_check;
-		// If there is root node, then add one reference to it
+		// If root node is tested, then add one reference to it
 		if (refs.find(root_ref) != refs.end()) {
 			refs_check[root_ref] = 1;
 		}
@@ -845,10 +845,32 @@ bool Archive::verifyReferences(bool throw_exception)
 				r_check = refs_check_find->second;
 			}
 			if (r != r_check) {
-				if (throw_exception) {
-					throw Hpp::Exception("Reference count for node " + Hpp::byteVToHexV(hash) + " is claimed to be " + Hpp::sizeToStr(r) + ", but when checked, only " + Hpp::sizeToStr(r_check) + " was found referencing to it!");
+				std::string error = "Reference count for node " + Hpp::byteVToHexV(hash) + " is claimed to be " + Hpp::sizeToStr(r) + ", but when checked, only " + Hpp::sizeToStr(r_check) + " was found referencing to it!";
+				if (fix_errors) {
+					if (useroptions.verbose) {
+						(*useroptions.verbose) << "WARNING: " << error << " Fixing..." << std::endl;
+					}
+					uint64_t metadata_loc;
+					Nodes::Metadata metadata = getNodeMetadata(hash, &metadata_loc);
+					metadata.refs = r_check;
+					// If there is no reference to this Node, then mark that orphans exist.
+					if (r_check == 0) {
+						io.initWrite(false);
+						setOrphanNodesFlag(true);
+						io.deinitWrite();
+					}
+					io.initWrite(true);
+					writeMetadata(metadata, metadata_loc);
+					io.deinitWrite();
+					if (useroptions.verbose) {
+						(*useroptions.verbose) << "Fixed!" << std::endl;
+					}
+				} else {
+					if (throw_exception) {
+						throw Hpp::Exception(error);
+					}
+					return false;
 				}
-				return false;
 			}
 		}
 
@@ -1187,7 +1209,7 @@ ssize_t Archive::getNodeMetadataLocation(Hpp::ByteV const& hash)
 	return -1;
 }
 
-Nodes::Metadata Archive::getNodeMetadata(Hpp::ByteV const& node_hash, ssize_t* loc)
+Nodes::Metadata Archive::getNodeMetadata(Hpp::ByteV const& node_hash, uint64_t* loc)
 {
 	HppAssert(node_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 	ssize_t metadata_loc = getNodeMetadataLocation(node_hash);
@@ -1470,8 +1492,8 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	}
 
 	// Get and update metadata
-	ssize_t metadata_old_loc;
-	ssize_t metadata_new_loc;
+	uint64_t metadata_old_loc;
+	uint64_t metadata_new_loc;
 	HppAssert(root_ref.size() == NODE_HASH_SIZE, "Invalid hash size!");
 	HppAssert(new_root.size() == NODE_HASH_SIZE, "Invalid hash size!");
 	Nodes::Metadata metadata_old = getNodeMetadata(root_ref, &metadata_old_loc);
@@ -1493,7 +1515,7 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 
 	// Write
 	io.deinitWrite();
-	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 
 }
 
@@ -1526,7 +1548,7 @@ void Archive::writeOrphanNodesFlag(bool orphans_exists)
 void Archive::writeSetNodeRefs(Hpp::ByteV const& hash, uint32_t refs)
 {
 	HppAssert(hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
-	ssize_t metadata_loc;
+	uint64_t metadata_loc;
 	Nodes::Metadata meta = getNodeMetadata(hash, &metadata_loc);
 	meta.refs = refs;
 	writeMetadata(meta, metadata_loc);
@@ -1793,7 +1815,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 	HppAssert(Nodes::Metadata::ENTRY_SIZE >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
 	writeEmpty(getSectionBegin(SECTION_DATA), Nodes::Metadata::ENTRY_SIZE - Nodes::Dataentry::HEADER_SIZE, false);
 
-	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
 
 }
 
@@ -1819,7 +1841,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 		writeRootRefAndCounts();
 		writeEmpty(datasec_begin, bytes - Nodes::Dataentry::HEADER_SIZE, false);
 		io.deinitWrite();
-		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 
 	}
 	// If there is not infinite amount of emptiness,
@@ -1873,7 +1895,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 					else empty_begin_dest = de_to_check_end;
 					HppAssert (moved_new_loc == empty_begin_dest || moved_new_loc >= empty_begin_dest + Nodes::Dataentry::HEADER_SIZE, "There won\'t be enough space before destination!");
 					moveData(moved_de_loc, moved_new_loc, datasec_begin, empty_begin_dest);
-					HppAssert(verifyDataentriesAreValid(), "Dataentries are broken!");
+					HppAssert(verifyDataentriesAreValid(false), "Dataentries are broken!");
 					break;
 				}
 
@@ -1928,7 +1950,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 			writeEmpty(datasec_begin + bytes, empty_bytes_after_datasec_begin - Nodes::Dataentry::HEADER_SIZE, false);
 		}
 		io.deinitWrite();
-		HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+		HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 
 	}
 
@@ -1955,7 +1977,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	// Make space for metadata
 // TODO: Would it be a good idea to reserve the space for data here too?
 	ensureEmptyDataentryAtBeginning(Nodes::Metadata::ENTRY_SIZE);
-	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
 
 	io.initWrite(true);
 
@@ -2026,7 +2048,7 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	     children_it != children.end();
 	     ++ children_it) {
 		Hpp::ByteV const& child_hash = children_it->hash;
-		ssize_t child_metadata_loc;
+		uint64_t child_metadata_loc;
 		HppAssert(child_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 		Nodes::Metadata child_metadata = getNodeMetadata(child_hash, &child_metadata_loc);
 		if (child_metadata_loc == (ssize_t)parent_loc) {
@@ -2059,10 +2081,10 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 
 	// Do writing
 	io.deinitWrite();
-	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 
-	HppAssert(verifyNoDoubleMetadatas(), "Same metadata is found twice!");
-	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
+	HppAssert(verifyNoDoubleMetadatas(false), "Same metadata is found twice!");
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
 }
 
 void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
@@ -2070,13 +2092,13 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 {
 	HppAssert(hash != root_ref, "Trying to remove root node!");
 
-	HppAssert(verifyRootNodeExists(), "There is no references to root node any more!");
+	HppAssert(verifyRootNodeExists(false), "There is no references to root node any more!");
 
-	ssize_t metadata_loc;
+	uint64_t metadata_loc;
 	Nodes::Metadata metadata = getNodeMetadata(hash, &metadata_loc);
 
 	HppAssert(metadata.refs == 0, "Node should be orphan!");
-	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
 
 	io.initWrite(true);
 
@@ -2096,7 +2118,7 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 	     ++ children_it) {
 		Hpp::ByteV const& child_hash = children_it->hash;
 		// Get metadata
-		ssize_t child_metadata_loc;
+		uint64_t child_metadata_loc;
 		HppAssert(child_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 		Nodes::Metadata child_metadata = getNodeMetadata(child_hash, &child_metadata_loc);
 		// Reduce reference count
@@ -2117,9 +2139,9 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 
 	// Do writes
 	io.deinitWrite();
-	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
-	HppAssert(verifyMetadatas(), "Metadatas are not valid!");
-	HppAssert(verifyRootNodeExists(), "There is no references to root node any more!");
+	HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
+	HppAssert(verifyRootNodeExists(false), "There is no references to root node any more!");
 
 	// Clean possible new orphans too
 	for (NodeInfos::const_iterator new_orphans_it = new_orphans.begin();
@@ -2130,7 +2152,7 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 		clearOrphanNodeRecursively(new_orphan.metadata.hash, new_orphan.type);
 	}
 
-	HppAssert(verifyRootNodeExists(), "There is no references to root node any more!");
+	HppAssert(verifyRootNodeExists(false), "There is no references to root node any more!");
 }
 
 void Archive::setOrphanNodesFlag(bool flag)
@@ -2260,7 +2282,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	hasher.getHash(hash);
 
 	// Get metadata of source node and its location
-	ssize_t metadata_loc;
+	uint64_t metadata_loc;
 	HppAssert(hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
 	Nodes::Metadata metadata = getNodeMetadata(hash, &metadata_loc);
 	metadata.data_loc = dest;
@@ -2331,7 +2353,7 @@ void Archive::moveData(uint64_t src, uint64_t dest,
 	}
 
 	// Do writes
-	HppAssert(verifyDataentriesAreValid(), "Journaled write left dataentries broken!");
+	HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 	io.deinitWrite();
 }
 
