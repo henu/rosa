@@ -2039,7 +2039,6 @@ void Archive::spawnOrGetNode(Nodes::Node* node)
 	meta.refs = 0;
 	meta.parent = parent_loc;
 	meta.data_loc = dataspace_begin;
-	meta.data_size_uncompressed = data.size();
 	writeMetadata(meta, new_metadata_loc);
 
 	// Prepare to increase refrence counts of all direct children

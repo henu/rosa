@@ -24,16 +24,13 @@ struct Metadata
 	uint64_t child_big;
 	// This points to the beginning of data entry, i.e. to its header.
 	uint64_t data_loc;
-// TODO: Is this useless?
-	uint32_t data_size_uncompressed;
 
 	inline Metadata(void) :
 	refs(0),
 	parent(NULL_REF),
 	child_small(NULL_REF),
 	child_big(NULL_REF),
-	data_loc(0),
-	data_size_uncompressed(0)
+	data_loc(0)
 	{
 	}
 
@@ -50,7 +47,6 @@ struct Metadata
 		child_big = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 19]);
 
 		data_loc = Hpp::cStrToUInt64(&serialized[NODE_HASH_SIZE + 27]);
-		data_size_uncompressed = Hpp::cStrToUInt32(&serialized[NODE_HASH_SIZE + 35]);
 	}
 
 	inline Hpp::ByteV serialize(void) const
@@ -66,7 +62,9 @@ struct Metadata
 		result += Hpp::uInt64ToByteV(child_big);
 
 		result += Hpp::uInt64ToByteV(data_loc);
-		result += Hpp::uInt32ToByteV(data_size_uncompressed);
+		
+// TODO: These are dummy bytes that will be removed in future
+		result += Hpp::uInt32ToByteV(rand());
 
 		HppAssert(result.size() == ENTRY_SIZE, "Invalid serialized size!");
 
@@ -93,7 +91,7 @@ struct Metadata
 
 inline std::ostream& operator<<(std::ostream& strm, Metadata const& metadata)
 {
-	strm << Hpp::byteVToHexV(metadata.hash) << " (refs: " << metadata.refs << ", st.parent: " << Metadata::searchtreeRefToString(metadata.parent) << ", st.child_s: " << Metadata::searchtreeRefToString(metadata.child_small) << ", st.child_b: " << Metadata::searchtreeRefToString(metadata.child_big) << ", data loc: " << metadata.data_loc << ", data size: " << metadata.data_size_uncompressed << ")";
+	strm << Hpp::byteVToHexV(metadata.hash) << " (refs: " << metadata.refs << ", st.parent: " << Metadata::searchtreeRefToString(metadata.parent) << ", st.child_s: " << Metadata::searchtreeRefToString(metadata.child_small) << ", st.child_b: " << Metadata::searchtreeRefToString(metadata.child_big) << ", data loc: " << metadata.data_loc << ")";
 	return strm;
 }
 
