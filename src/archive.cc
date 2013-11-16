@@ -784,8 +784,24 @@ bool Archive::verifyNoDoubleMetadatas(bool throw_exception)
 
 bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 {
+	std::ostream* verbose = useroptions.verbose;
+
+	if (verbose) {
+		if (fix_errors) {
+			*verbose << "Fixing reference counts..." << std::endl;
+		} else {
+			*verbose << "Verifying reference counts..." << std::endl;
+		}
+		(*verbose) << "0 % ready." << '\xd';
+		verbose->flush();
+	}
+
+	size_t last_progress = 0;
+
 	size_t metadata_ofs = 0;
 	while (metadata_ofs < nodes_size) {
+
+		size_t progress_at_start = 100 * (metadata_ofs + 1) / nodes_size;
 
 		// Pick some Nodes for reference count check
 		std::map< Hpp::ByteV, uint32_t > refs;
@@ -795,6 +811,8 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 			refs[metadata.hash] = metadata.refs;
 		}
 
+		size_t progress_between = 100 * (metadata_ofs + 1) / nodes_size - progress_at_start;
+
 		// Go all nodes through, and calculate how many
 		// references there are to the selected ones
 		std::map< Hpp::ByteV, uint32_t > refs_check;
@@ -802,7 +820,8 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 		if (refs.find(root_ref) != refs.end()) {
 			refs_check[root_ref] = 1;
 		}
-		size_t check_loc = getSectionBegin(SECTION_DATA);
+		size_t datasec_begin = getSectionBegin(SECTION_DATA);
+		size_t check_loc = datasec_begin;
 		while (check_loc < datasec_end) {
 
 			Nodes::Dataentry check_de = getDataentry(check_loc, true, true);
@@ -831,6 +850,18 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 			}
 
 			check_loc += Nodes::Dataentry::HEADER_SIZE + check_de.size;
+
+			double data_area_progress = double(check_loc - datasec_begin) / (datasec_end - datasec_begin);
+
+			size_t progress = progress_at_start + int(progress_between * data_area_progress + 0.5);
+			if (progress != last_progress) {
+				if (verbose) {
+					(*verbose) << progress << " % ready." << '\xd';
+					verbose->flush();
+				}
+				last_progress = progress;
+			}
+
 		}
 
 		// Now ensure all reference counts are same.
@@ -847,8 +878,8 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 			if (r != r_check) {
 				std::string error = "Reference count for node " + Hpp::byteVToHexV(hash) + " is claimed to be " + Hpp::sizeToStr(r) + ", but when checked, only " + Hpp::sizeToStr(r_check) + " was found referencing to it!";
 				if (fix_errors) {
-					if (useroptions.verbose) {
-						(*useroptions.verbose) << "WARNING: " << error << " Fixing..." << std::endl;
+					if (verbose) {
+						(*verbose) << error << " Fixing..." << std::endl;
 					}
 					uint64_t metadata_loc;
 					Nodes::Metadata metadata = getNodeMetadata(hash, &metadata_loc);
@@ -862,9 +893,6 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 					io.initWrite(true);
 					writeMetadata(metadata, metadata_loc);
 					io.deinitWrite();
-					if (useroptions.verbose) {
-						(*useroptions.verbose) << "Fixed!" << std::endl;
-					}
 				} else {
 					if (throw_exception) {
 						throw Hpp::Exception(error);
@@ -875,6 +903,8 @@ bool Archive::verifyReferences(bool throw_exception, bool fix_errors)
 		}
 
 	}
+
+	if (verbose) (*verbose) << "100 % ready." << std::endl;
 
 	return true;
 }

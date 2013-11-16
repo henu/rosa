@@ -174,14 +174,18 @@ void Archiver::verify(Useroptions const& useroptions, bool fix_errors)
 {
 	if (useroptions.verbose) *useroptions.verbose << "Verifying dataentries are valid..." << std::endl;
 	archive.verifyDataentriesAreValid(true);
+
 	if (useroptions.verbose) *useroptions.verbose << "Verifying No double metadatas..." << std::endl;
 	archive.verifyNoDoubleMetadatas(true);
+
 	if (useroptions.verbose) *useroptions.verbose << "Verifying metadatas..." << std::endl;
 	archive.verifyMetadatas(true);
+
 	if (useroptions.verbose) *useroptions.verbose << "Verifying root node exists..." << std::endl;
 	archive.verifyRootNodeExists(true);
-	if (useroptions.verbose) *useroptions.verbose << "Verifying references..." << std::endl;
+
 	archive.verifyReferences(true, fix_errors);
+
 	if (useroptions.verbose) *useroptions.verbose << "Done!" << std::endl;
 }
 
