@@ -99,6 +99,9 @@ public:
 	bool verifyMetadatas(bool throw_exception);
 	bool verifyRootNodeExists(bool throw_exception);
 
+	// Functions to fix stuff
+	void removeCorruptedNodesAndFixDataarea(void);
+
 private:
 
 	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;

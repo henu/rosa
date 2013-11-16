@@ -1057,6 +1057,188 @@ bool Archive::verifyRootNodeExists(bool throw_exception)
 	return true;
 }
 
+void Archive::removeCorruptedNodesAndFixDataarea(void)
+{
+	if (useroptions.verbose) *useroptions.verbose << "Removing corrupted nodes..." << std::endl;
+
+	// This container keeps track of locations of non-empty
+	// Dataentries. After corrupted Nodes are removed, The
+	// whole data-area is iterated through and ensured that
+	// gaps between are filled with valid empty Dataentries.
+// TODO: This might require too much memory!
+	UI64ByUI64 data_locs;
+
+	for (size_t metadata_ofs = 0; metadata_ofs < nodes_size;) {
+		if (useroptions.verbose) (*useroptions.verbose) << "Node " << (metadata_ofs + 1) << " / " << nodes_size;
+
+		bool broken_node = false;
+
+		Nodes::Metadata metadata = getMetadata(metadata_ofs);
+
+		// Read data of metadata and ensure node is not corrupted.
+		// This means that its hash must be the same and proper
+		// Object can be constructed from it.
+		Nodes::Dataentry de;
+		try {
+			de = getDataentry(metadata.data_loc, true, true);
+		}
+		catch (Hpp::Exception const& e) {
+			if (useroptions.verbose) (*useroptions.verbose) << ": Dataentry of node is corrupted!";
+			broken_node = true;
+		}
+
+		// Ensure data does not overlap with any other node!
+		uint64_t data_begin = metadata.data_loc;
+		uint64_t data_size = de.size + Nodes::Dataentry::HEADER_SIZE;
+		// First check if this data overlaps the head of another
+		UI64ByUI64::iterator data_locs_find = data_locs.upper_bound(data_begin);
+		if (!broken_node && data_locs_find != data_locs.end()) {
+			if (data_begin + data_size > data_locs_find->first) {
+				if (useroptions.verbose) (*useroptions.verbose) << ": Dataentry of node overlaps with another dataentry!";
+				broken_node = true;
+			}
+		}
+		// Then check if this overlaps tail
+		if (!broken_node && data_locs_find != data_locs.begin()) {
+			-- data_locs_find;
+			HppAssert(data_locs_find->first <= data_begin, "Fail!");
+			if (data_locs_find->first + data_locs_find->second > data_begin) {
+				if (useroptions.verbose) (*useroptions.verbose) << ": Dataentry of node overlaps with another dataentry!";
+				broken_node = true;
+			}
+		}
+
+		// Ensure correct type
+		if (!broken_node && de.empty) {
+			if (useroptions.verbose) (*useroptions.verbose) << ": Node points to empty dataentry!";
+			broken_node = true;
+		}
+
+		// Ensure hash matches
+		if (!broken_node) {
+			// Calculate hash
+			Hpp::ByteV hash;
+			Hpp::Sha512Hasher hasher;
+			hasher.addData(de.data);
+			hasher.addData(Hpp::ByteV(1, uint8_t(de.type)));
+			hasher.getHash(hash);
+
+			if (hash != metadata.hash) {
+				if (useroptions.verbose) (*useroptions.verbose) << ": Hash of node data differs from the hash in node itself!";
+				broken_node = true;
+			}
+		}
+
+		// Try to construct proper Node object
+		Nodes::Node* node_obj = NULL;
+		try {
+			node_obj = spawnNodeFromDataentry(de);
+		}
+		catch (Hpp::Exception) {
+			if (useroptions.verbose) (*useroptions.verbose) << ": Data of node is corrupted!";
+			broken_node = true;
+		}
+		delete node_obj;
+
+		// Now do the actual removing, if there
+		// is something wrong with the Node.
+		if (broken_node) {
+			if (useroptions.verbose) (*useroptions.verbose) << " Removing node." << std::endl;
+
+			// Do removing
+			io.initWrite(true);
+			writeRemoveMetadata(metadata, metadata_ofs);
+			io.deinitWrite();
+		} else {
+			// Since Node was okay, store its data location
+			// Check if this data begins from where another data ends
+			data_locs_find = data_locs.upper_bound(data_begin);
+			if (data_locs_find != data_locs.begin()) {
+				-- data_locs_find;
+				if (data_locs_find->first + data_locs_find->second == data_begin) {
+					data_size += data_locs_find->second;
+					data_begin -= data_locs_find->second;
+				}
+			}
+			// Check if some data begins just after this one
+			data_locs_find = data_locs.find(data_begin + data_size);
+			if (data_locs_find != data_locs.end()) {
+				data_size += data_locs_find->second;
+				data_locs.erase(data_locs_find);
+			}
+			// Finally store this data location
+			data_locs[data_begin] = data_size;
+
+			if (useroptions.verbose) {
+				(*useroptions.verbose) << '\xd';
+				useroptions.verbose->flush();
+			}
+
+			 ++ metadata_ofs;
+		}
+	}
+	if (useroptions.verbose) (*useroptions.verbose) << std::endl;
+
+	if (useroptions.verbose) *useroptions.verbose << "Fixing data-area..." << std::endl;
+
+	// Convert locations of datas into locations of empties
+	UI64ByUI64 empty_locs;
+	uint64_t last_data_end = getSectionBegin(SECTION_DATA);
+	for (UI64ByUI64::iterator data_locs_it = data_locs.begin();
+	     data_locs_it != data_locs.end();
+	     ++ data_locs_it) {
+		// Get data properties
+		uint64_t data_begin = data_locs_it->first;
+		uint64_t data_size = data_locs_it->second;
+		// Calculate empty properties
+		uint64_t empty_begin = last_data_end;
+		HppAssert(data_begin >= last_data_end, "Data locations are corrupted!");
+		uint64_t empty_size = data_begin - empty_begin;
+		// Add to container
+		if (empty_size > 0) {
+			empty_locs[empty_begin] = empty_size;
+		}
+		last_data_end = data_begin + data_size;
+	}
+	if (last_data_end != datasec_end) {
+		uint64_t empty_begin = last_data_end;
+		HppAssert(datasec_end >= last_data_end, "Data locations are corrupted!");
+		uint64_t empty_size = datasec_end - empty_begin;
+		empty_locs[empty_begin] = empty_size;
+	}
+
+	// Now go empties through and fill them
+	size_t empties_locs_progress = 0;
+	for (UI64ByUI64::iterator empties_locs_it = empty_locs.begin();
+	     empties_locs_it != empty_locs.end();
+	     ++ empties_locs_it) {
+
+		// Update progress
+		++ empties_locs_progress;
+		if (useroptions.verbose) (*useroptions.verbose) << (100 * empties_locs_progress / empty_locs.size()) << " % ready.";
+
+		uint64_t empty_begin = empties_locs_it->first;
+		uint64_t empty_size = empties_locs_it->second;
+
+		// Reduce header size from empty
+		if (empty_size < Nodes::Dataentry::HEADER_SIZE) {
+			throw Hpp::Exception("Unable to fix package, because there is too small gap between non-empty dataentries at data-area!");
+		}
+		empty_size -= Nodes::Dataentry::HEADER_SIZE;
+
+		io.initWrite(true);
+		writeEmpty(empty_begin, empty_size, false);
+		io.deinitWrite();
+
+		if (useroptions.verbose) {
+			(*useroptions.verbose) << '\xd';
+			useroptions.verbose->flush();
+		}
+	}
+	if (useroptions.verbose) (*useroptions.verbose) << std::endl;
+
+}
+
 void Archive::closeAndOpenFile(Hpp::Path const& path)
 {
 	io.closeAndOpenFile(path);
