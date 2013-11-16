@@ -283,6 +283,14 @@ private:
 	// to data section and to metadata section.
 	void writeClearNode(Nodes::Metadata const& metadata, size_t metadata_loc);
 
+	// Removes specific metadata by moving last metadata over it. It also
+	// reduces node count by one and keeps searchtree in working state.
+	// Beginning of data area is also moved towards beginning, and new
+	// empty dataentry is added there. However the new empty dataentry is
+	// not joined to following other empties, because that might cause
+	// problems when fixing algorithms call this function.
+	void writeRemoveMetadata(Nodes::Metadata const& metadata, size_t metadata_loc);
+
 
 	// ----------------------------------------
 	// More miscellaneous functions

@@ -167,7 +167,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 		if (!new_children.empty()) {
 			HppAssert(new_children.size() == 1, "There should be exactly one child!");
 			new_folder.setChild(dest.getFilename(), new_children[0]);
-	
+
 			root_now = replaceLastFolder(fpath, dest_fixed, new_folder);
 		}
 
@@ -480,7 +480,7 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 	if (nodes_size == 0) {
 		return;
 	}
-	
+
 	size_t last_known_not_empty = getSectionBegin(SECTION_DATA);
 
 	while (deadline > Hpp::now() && last_known_not_empty < datasec_end) {
@@ -497,7 +497,7 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 		std::map< size_t, size_t >::const_reverse_iterator des_init_rit = des_helper.rbegin();
 		size_t search_end = datasec_end;
 		while (des.size() < REMOVE_EMPTIES_MAX_DATAENTRIES_IN_MEMORY && des_init_rit != des_helper.rend()) {
-			// Search for more data entries.			
+			// Search for more data entries.
 			size_t search = des_init_rit->first + des_init_rit->second;
 			des.insert(std::pair< size_t, size_t >(des_init_rit->second, des_init_rit->first));
 			while (des.size() < REMOVE_EMPTIES_MAX_DATAENTRIES_IN_MEMORY && search < search_end) {
@@ -511,11 +511,11 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 				}
 				search += Nodes::Dataentry::HEADER_SIZE + de.size;
 			}
-			
+
 			search_end = des_init_rit->first;
 			++ des_init_rit;
 		}
-		
+
 		// Now try to find empty positions that could be filled with
 		// found dataentries. Prefer those that are at the beginning.
 		while (!des.empty() && deadline > Hpp::now() && last_known_not_empty < datasec_end) {
@@ -556,7 +556,7 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 						if (empty_size < 0) {
 							break;
 						}
-						
+
 						// Find best combination of dataentries to fill empty gap.
 						SizeBySize fillers;
 						// Check if perfect fit can be found
@@ -1110,7 +1110,7 @@ void Archive::loadStateFromFile(std::string const& password)
 	nodes_size = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE]);
 	searchtree_begin = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 8]);
 	datasec_end = Hpp::cStrToUInt64(&root_refs_and_sizes[NODE_HASH_SIZE + 16]);
-	
+
 	// Inform FileIO about new data end
 	io.setEndOfData(datasec_end);
 
@@ -1629,10 +1629,19 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 	// Clear data entry
 	writeEmpty(metadata.data_loc, de.size, true);
 
+	// Remove metadata
+	writeRemoveMetadata(metadata, metadata_loc);
+
+	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
+
+}
+
+void Archive::writeRemoveMetadata(Nodes::Metadata const& metadata, size_t metadata_loc)
+{
 	uint64_t parent_loc = metadata.parent;
 	uint64_t child_small_loc = metadata.child_small;
 	uint64_t child_big_loc = metadata.child_big;
-	
+
 	// If there are no children at all
 	if (child_small_loc == Nodes::Metadata::NULL_REF &&
 	    child_big_loc == Nodes::Metadata::NULL_REF) {
@@ -1650,7 +1659,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 			}
 			writeMetadata(parent, parent_loc);
 		}
-	
+
 	}
 	// If there is only one child
 	else if (child_small_loc == Nodes::Metadata::NULL_REF ||
@@ -1664,7 +1673,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 		Nodes::Metadata child = getNodeMetadata(child_loc);
 		child.parent = parent_loc;
 		writeMetadata(child, child_loc);
-		
+
 		// Remove reference to the removed node from possible parent
 		if (parent_loc != Nodes::Metadata::NULL_REF) {
 			Nodes::Metadata parent = getNodeMetadata(parent_loc);
@@ -1687,7 +1696,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 	}
 	// There are two children
 	else {
-	
+
 		// Find next node after removed one (i.e. the
 		// smallest node from all the bigger ones)
 		uint64_t smallest_loc = child_big_loc;
@@ -1695,7 +1704,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 		while ((smallest = getNodeMetadata(smallest_loc)).child_small != Nodes::Metadata::NULL_REF) {
 			smallest_loc = smallest.child_small;
 		}
-		
+
 		// The smallest has only one or zero children,
 		// so it is easy to remove from tree.
 		HppAssert(smallest.child_small == Nodes::Metadata::NULL_REF, "Unexpected child!");
@@ -1706,7 +1715,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 			child.parent = smallest.parent;
 			writeMetadata(child, smallest.child_big);
 		}
-		
+
 		// Then update parent. This may/ update the removed node.
 		HppAssert(smallest.parent != Nodes::Metadata::NULL_REF, "Smallest should have parent!");
 		Nodes::Metadata parent = getNodeMetadata(smallest.parent);
@@ -1720,10 +1729,10 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 			parent.child_big = smallest.child_big;
 		}
 		writeMetadata(parent, smallest.parent);
-		
+
 		// Reload metadata, in case it has changed
 		Nodes::Metadata metadata2 = getNodeMetadata(metadata_loc);
-		
+
 		// Replace the removed node with the smallest
 		// node. First update the replacing node.
 		HppAssert(metadata2.parent == parent_loc, "Unexpected parent change!");
@@ -1762,7 +1771,7 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 			big_child.parent = smallest_loc;
 			writeMetadata(big_child, smallest.child_big);
 		}
-	
+
 	}
 
 	// If this was not last metadata, then the
@@ -1814,9 +1823,6 @@ void Archive::writeClearNode(Nodes::Metadata const& metadata, size_t metadata_lo
 	writeRootRefAndCounts();
 	HppAssert(Nodes::Metadata::ENTRY_SIZE >= Nodes::Dataentry::HEADER_SIZE, "Fail!");
 	writeEmpty(getSectionBegin(SECTION_DATA), Nodes::Metadata::ENTRY_SIZE - Nodes::Dataentry::HEADER_SIZE, false);
-
-	HppAssert(verifyMetadatas(false), "Metadatas are not valid!");
-
 }
 
 void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
@@ -2206,7 +2212,7 @@ size_t Archive::getSectionBegin(Section sec) const
 void Archive::doWriteEmpty(uint64_t begin, uint64_t size)
 {
 	HppAssert(begin + size <= datasec_end, "Trying to write empty after datasection!");
-	
+
 	// Write in parts, because dataentry size is small (only 29 bits).
 	while (size > 0) {
 		HppAssert(size == 0 || size >= Nodes::Dataentry::HEADER_SIZE, "Too small amount of empty!");
@@ -2402,7 +2408,7 @@ bool Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 	if (useroptions.verbose) {
 		(*useroptions.verbose) << source.toString() << std::endl;
 	}
-	
+
 	// If type can not be found, then give up
 	Hpp::Path::Type source_type;
 	try {
@@ -2492,12 +2498,12 @@ bool Archive::readFileHierarchy(Hpp::ByteV& result_hash, Nodes::FsType& result_f
 		// Convert file contents into datablocks.
 		// First open file and get its size.
 		std::ifstream source_file(source.toString().c_str(), std::ios_base::binary);
-		
+
 		// If file could not be opened, then give up
 		if (!source_file.is_open()) {
 			return false;
 		}
-		
+
 		// Get size of file
 		source_file.seekg(0, std::ios_base::end);
 		size_t source_file_left = source_file.tellg();
@@ -2651,7 +2657,7 @@ bool Archive::findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySiz
 		return false;
 	}
 	-- calls_limit;
-	
+
 	// If there is Dataentry with perfect size, then return it
 	SizeBySizeMulti::iterator des_find = des.find(empty_size);
 	while (des_find != des.end()) {
@@ -2675,7 +2681,7 @@ bool Archive::findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySiz
 	// Continue as long as there is dataentries big enough to fill the gap
 	while (des_find != des.begin() && calls_limit > 0) {
 		-- des_find;
-		
+
 		// Do not accept Dataentries that are at the
 		// area that is supposed to contain no gaps.
 		bool all_rest_are_at_no_gaps_area = false;
@@ -2692,30 +2698,30 @@ bool Archive::findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySiz
 		if (all_rest_are_at_no_gaps_area) {
 			break;
 		}
-		
+
 		// Skip those Dataentries that are too big
 		if (des_find->first > max_fitter_size) {
 			continue;
 		}
-		
+
 		// Skip those Dataentries that are not after empty data
 		if (des_find->second < empty_begin + empty_size) {
 			continue;
 		}
-		
+
 		// Pick info about dataentry that would be checked and remove
 		// it from container so it won't be used multiple times.
 		size_t de_size = des_find->first;
 		size_t de_offset = des_find->second;
 		des.erase(des_find);
-		
+
 		// Keep searching recursively
 		HppAssert(empty_size >= de_size, "Fail!");
 		if (findBestFillers(result, calls_limit, des, empty_begin + de_size, empty_size - de_size, de_size)) {
 			result[de_offset] = de_size;
 			return true;
 		}
-		
+
 		// Dataentry of this size does not make perfect fit, so put its
 		// properties back to container and try one that is smaller
 		des.insert(std::pair< size_t, size_t >(de_size, de_offset));
