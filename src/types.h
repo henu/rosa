@@ -13,4 +13,6 @@ typedef std::vector< Hpp::ByteV > ByteVs;
 typedef std::map< size_t, size_t > SizeBySize;
 typedef std::multimap< size_t, size_t > SizeBySizeMulti;
 
+typedef std::map< uint64_t, uint64_t > UI64ByUI64;
+
 #endif

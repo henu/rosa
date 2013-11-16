@@ -58,7 +58,7 @@ public:
 
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
-	
+
 	void removeEmptyDataentries(Hpp::Time const& deadline);
 
 	// Reduces file size to minimum possible.
@@ -131,7 +131,7 @@ private:
 		Nodes::Type type;
 	};
 	typedef std::vector< NodeInfo > NodeInfos;
-	
+
 	Useroptions useroptions;
 
 	FileIO io;
@@ -338,17 +338,18 @@ private:
 
 	// Recursively analyses nodes of searchtree.
 	void analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t metadata_loc, uint16_t depth);
-	
+
 	// Helper function to find specific number of
 	// dataentry offsets and sizes. "result" is cleared.
+// TODO: Use UI64BtUI64 instead of SizeBySize!
 	void findRandomDataentries(SizeBySize& result, size_t max_to_find);
-	
+
 	// Used by removeEmptyDataentries(). "result" is cleared.
 	// Returns true if perfect match was found. "calls_limit"
 	// tells how many calls are allowed to do. After it
 	// reaches zero, false is returned immediately.
 	bool findBestFillers(SizeBySize& result, size_t& calls_limit, SizeBySizeMulti& des, size_t empty_begin, size_t empty_size, size_t max_fitter_size = size_t(-1));
-	
+
 	void ensureNotInSizeIndexedOffsets(SizeBySizeMulti& mm, size_t offset, size_t size);
 
 	// Generates crypto key from password and salt
