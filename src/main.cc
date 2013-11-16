@@ -412,9 +412,15 @@ void run(int argc, char** argv)
 		read_write_mode = true;
 	}
 
+	// If fixing is requested, then do not remove possible orphans,
+	// as this might cause problems if package is broken.
+	bool do_not_remove_possible_orphans = false;
+	if (action == ACTION_FIX) {
+		do_not_remove_possible_orphans = true;
+	}
 
-	Archiver archiver(archive, password, create_if_does_not_exist, read_write_mode, useroptions);
-	
+	Archiver archiver(archive, password, create_if_does_not_exist, read_write_mode, do_not_remove_possible_orphans, useroptions);
+
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
 		Hpp::Time start_time = Hpp::now();

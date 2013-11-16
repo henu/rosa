@@ -4,7 +4,7 @@
 #include "exceptions/alreadyexists.h"
 
 Archiver::Archiver(Hpp::Path const& path, std::string const& password,
-                   bool create_if_does_not_exist, bool read_write_mode,
+                   bool create_if_does_not_exist, bool read_write_mode, bool do_not_remove_possible_orphans,
                    Useroptions const& useroptions) :
 archive(read_write_mode, useroptions)
 {
@@ -20,9 +20,9 @@ archive(read_write_mode, useroptions)
 	// Journal is always fixed. In read only
 	// mode, it is fixed to read cache.
 	archive.finishPossibleInterruptedJournal();
-	
+
 	// Possible orphans are fixed only in read write mode
-	if (read_write_mode) {
+	if (read_write_mode && !do_not_remove_possible_orphans) {
 		archive.removePossibleOrphans();
 	}
 

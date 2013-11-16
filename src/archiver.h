@@ -14,7 +14,7 @@ public:
 
 	// If password protection is needed, then give non-empty password.
 	Archiver(Hpp::Path const& path, std::string const& password,
-	         bool create_if_does_not_exist, bool read_write_mode,
+	         bool create_if_does_not_exist, bool read_write_mode, bool do_not_remove_possible_orphans,
 	         Useroptions const& useroptions);
 
 	// Prints debug information to standard output

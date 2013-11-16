@@ -98,7 +98,7 @@ public:
 	bool verifyReferences(bool throw_exception, bool fix_errors = false);
 	bool verifyMetadatas(bool throw_exception);
 	bool verifyRootNodeExists(bool throw_exception);
-	
+
 private:
 
 	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;
