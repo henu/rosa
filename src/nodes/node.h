@@ -16,8 +16,8 @@ public:
 
 	virtual inline ~Node(void) { }
 
-	Hpp::ByteV getData(void);
-	Hpp::ByteV getHash(void);
+	Hpp::ByteV getData(void) const;
+	Hpp::ByteV getHash(void) const;
 
 	// Returns all direct children Nodes. Note, that even
 	// if Node really has some child multiple times, here
@@ -35,8 +35,8 @@ protected:
 
 private:
 
-	Hpp::ByteV data;
-	Hpp::ByteV hash;
+	mutable Hpp::ByteV data;
+	mutable Hpp::ByteV hash;
 
 	// Asks for new serialization from subclass. Result is already cleared.
 	virtual void serialize(Hpp::ByteV& result) const = 0;

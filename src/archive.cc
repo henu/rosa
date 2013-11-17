@@ -1698,7 +1698,7 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	if (new_root == root_ref) {
 		#ifndef NDEBUG
 		Nodes::Metadata root_metadata = getNodeMetadata(root_ref);
-		HppAssert(root_metadata.refs > 0, "Trying to replace root node with old root that has zero references!");
+		HppAssert(root_metadata.refs > 0, "Trying to replace root node with same node and that same node has zero references!");
 		#endif
 		return;
 	}
@@ -2174,7 +2174,7 @@ void Archive::ensureEmptyDataentryAtBeginning(size_t bytes)
 
 }
 
-void Archive::spawnOrGetNode(Nodes::Node* node)
+void Archive::spawnOrGetNode(Nodes::Node const* node)
 {
 	#ifdef ENABLE_PROFILER
 	Hpp::Profiler prof("Archive::spawnOrGetNode");

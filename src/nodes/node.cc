@@ -7,7 +7,7 @@
 namespace Nodes
 {
 
-Hpp::ByteV Node::getData(void)
+Hpp::ByteV Node::getData(void) const
 {
 	if (data.empty()) {
 		serialize(data);
@@ -15,7 +15,7 @@ Hpp::ByteV Node::getData(void)
 	return data;
 }
 
-Hpp::ByteV Node::getHash(void)
+Hpp::ByteV Node::getHash(void) const
 {
 	// If hash is not calculated, then do it now
 	if (hash.empty()) {

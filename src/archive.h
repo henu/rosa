@@ -307,7 +307,7 @@ private:
 	// Spawns new node if it does not exist already. If new node
 	// is created, then it means its reference count will be zero.
 	// In this case, flag of orphan nodes MUST be enabled.
-	void spawnOrGetNode(Nodes::Node* node);
+	void spawnOrGetNode(Nodes::Node const* node);
 
 	// Recursively clear this node (which should be orphan)
 	// and all of its children that become orphans.
