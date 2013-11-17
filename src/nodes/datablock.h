@@ -19,6 +19,8 @@ public:
 	Datablock(Hpp::ByteV const& serialized);
 	virtual inline ~Datablock(void) { }
 
+	inline size_t getDataSize(void) const { return data.size(); }
+
 private:
 
 	Hpp::ByteV data;
