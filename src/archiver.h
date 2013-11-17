@@ -37,6 +37,10 @@ public:
 	// Verfies everything is okay
 	void verify(Useroptions const& useroptions, bool fix_errors);
 
+	// Rebuilds whole tree and fixes all errors that are found. Corrupted
+	// nodes are removed and orphaned nodes are moved under "/lost+found".
+	void fix(void);
+
 private:
 
 	Archive archive;

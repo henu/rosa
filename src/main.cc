@@ -479,7 +479,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_VERIFY) {
 		archiver.verify(useroptions, false);
 	} else if (action == ACTION_FIX) {
-		archiver.verify(useroptions, true);
+		archiver.fix();
 	} else if (action == ACTION_OPTIMIZE) {
 		archiver.optimize(Hpp::Delay::days(9999));
 	}

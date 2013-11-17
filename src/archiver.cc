@@ -189,6 +189,13 @@ void Archiver::verify(Useroptions const& useroptions, bool fix_errors)
 	if (useroptions.verbose) *useroptions.verbose << "Done!" << std::endl;
 }
 
+void Archiver::fix(void)
+{
+	archive.removeCorruptedNodesAndFixDataarea();
+	archive.verifyReferences(true, true);
+	archive.rebuildTree();
+}
+
 void Archiver::recursivelyPrintChildren(Hpp::ByteV const& node_hash, std::string const& indent, std::ostream* strm)
 {
 	// Get this node as Folder

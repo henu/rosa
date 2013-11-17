@@ -1,7 +1,6 @@
 #include "archive.h"
 
 #include "nodes/datablock.h"
-#include "nodes/file.h"
 #include "nodes/symlink.h"
 #include "exceptions/notfound.h"
 #include "exceptions/alreadyexists.h"
@@ -1239,6 +1238,57 @@ void Archive::removeCorruptedNodesAndFixDataarea(void)
 
 }
 
+void Archive::rebuildTree(void)
+{
+	// Enable orphan nodes flag
+	io.initWrite(false);
+	setOrphanNodesFlag(true);
+	io.deinitWrite();
+
+	if (useroptions.verbose) (*useroptions.verbose) << "Rebuilding tree..." << std::endl;
+
+	Hpp::ByteV old_root_hash = root_ref;
+// TODO: This makes some nodes to have bigger ref counts! Why?
+	Hpp::ByteV new_root = rebuildTreeRecursively(root_ref);
+verifyReferences(true, true);
+
+	replaceRootNode(new_root);
+
+	// Now root node has been changed, and there should be no problems in
+	// main tree. However there are still few problems:
+	// 1) There are still orphan files/folders/datablocks/symlinks that
+	// might be very important to user. These are left from corruption.
+	// 2) There is the old tree, that contains invalid Nodes, that refer to
+	// Nodes that does not exist. These are not orphan, but the old root
+	// node is.
+	// 3) Some of important orphans might contain references to
+	// non-existing Nodes too.
+
+	// The solution is to gather all orphans under "/lost+found" folder and
+	// ignore old root node in this process. Before orphan is added there,
+	// it must be rebuilt recursively, like the whole tree was built. After
+	// this is done, old root and other subtrees, that contain invalid
+	// nodes, can be removed.
+
+	// Gather orphans to lost+found and ignore root folder
+	if (useroptions.verbose) (*useroptions.verbose) << "Gathering important orphan nodes to lost+found..." << std::endl;
+	ByteVSet ignored_nodes;
+	ignored_nodes.insert(old_root_hash);
+	gatherOrphansToLostAndFound(ignored_nodes);
+
+	// References might be incorrect now, in case some previously lost node
+	// has recreated. This happens for example when orphan datablock is
+	// attached to a file under lost+found. If datablock was originally
+	// from a file that contains only one datablock (this is very common),
+	// then some nodes might be referencing to it, even though its ref
+	// count is only one.
+	verifyReferences(true, true);
+
+	// Clean remaining orphan nodes. This will toggle orphans flag to false
+	if (useroptions.verbose) (*useroptions.verbose) << "Cleaning useless orphan nodes..." << std::endl;
+	removePossibleOrphans();
+}
+
 void Archive::closeAndOpenFile(Hpp::Path const& path)
 {
 	io.closeAndOpenFile(path);
@@ -1729,6 +1779,113 @@ void Archive::replaceRootNode(Hpp::ByteV const& new_root)
 	io.deinitWrite();
 	HppAssert(verifyDataentriesAreValid(false), "Journaled write left dataentries broken!");
 
+}
+
+void Archive::gatherOrphansToLostAndFound(ByteVSet ignored_nodes)
+{
+// TODO: Constant increasing of "ignored_nodes" might run to out of memory -situation.
+
+	Hpp::ByteV final_root = root_ref;
+	// First get hash of root node, that has valid "lost+found" or
+	// "lost+found N" as its child.
+	Nodes::Folder root_folder(getNodeData(getNodeMetadataLocation(final_root)));
+	// Check if folder exists
+	std::string lostfound_name;
+	bool lostfound_create;
+	Nodes::FsMetadata lostfound_fsmetadata;
+	size_t search = 1;
+	do {
+		lostfound_name = "lost+found";
+		if (search > 1) lostfound_name += " " + Hpp::sizeToStr(search);
+		// If this name does not exist at all
+		if (!root_folder.hasChild(lostfound_name)) {
+			lostfound_create = true;
+			break;
+		}
+		// Something with this name already
+		// exists. Accept it, if its folder.
+		else if (root_folder.getChildType(lostfound_name) == Nodes::FSTYPE_FOLDER) {
+			lostfound_create = false;
+			lostfound_fsmetadata = root_folder.getChildFsMetadata(lostfound_name);
+			break;
+		}
+	} while(true);
+	// Create lost+found, if this is needed
+	if (lostfound_create) {
+		Nodes::Folder empty_folder;
+		spawnOrGetNode(&empty_folder);
+		root_folder.setChild(lostfound_name, Nodes::FSTYPE_FOLDER, empty_folder.getHash(), Nodes::FsMetadata());
+		// Create new root, but do not use it yet. Add it to ignored
+		// folders, so it does not get added to "lost+found".
+		spawnOrGetNode(&root_folder);
+		final_root = root_folder.getHash();
+		ignored_nodes.insert(final_root);
+	}
+
+	// Read old lost+found folder.
+	root_folder = Nodes::Folder(getNodeData(getNodeMetadataLocation(final_root)));
+	Hpp::ByteV lostfound_hash = root_folder.getChildHash(lostfound_name);
+	Nodes::Folder lostfound_folder(getNodeData(getNodeMetadataLocation(lostfound_hash)));
+
+	// Now go all nodes through, and add them to this folder. This makes
+	// new Nodes, but since old ones does stay where they are, this is safe.
+	for (size_t node_id = 0; node_id < nodes_size; ++ node_id) {
+		Nodes::Metadata metadata = getMetadata(node_id);
+
+		// Skip this node, if its not orphan
+		if (metadata.refs > 0) continue;
+
+		// Skip this node, if its part of ignored nodes.
+		if (ignored_nodes.find(metadata.hash) != ignored_nodes.end()) continue;
+
+		 // So this node is orphan for sure, and needs to be rescued.
+		 Nodes::Dataentry de = getDataentry(metadata.data_loc, true, true);
+
+		 // If its datablock, then convert it to file
+		 if (de.type == Nodes::TYPE_DATABLOCK) {
+			Nodes::Datablock db(de.data);
+			HppAssert(db.getHash() == metadata.hash, "Hash does not match!");
+			// Create new file node, that contains this missing datablock.
+			Nodes::File file;
+			file.addDatablock(db.getHash(), db.getDataSize());
+			spawnOrGetNode(&file);
+			// Add the hash to ignored ones, to prevent it being noticed again.
+			ignored_nodes.insert(file.getHash());
+			// Add node to "lost+found".
+			std::string file_name = lostfound_folder.getRandomNewName("datablock_");
+			lostfound_folder.setChild(file_name, Nodes::FSTYPE_FILE, file.getHash(), Nodes::FsMetadata());
+		 } else if (de.type == Nodes::TYPE_SYMLINK) {
+			// Add node to "lost+found".
+			std::string symlink_name = lostfound_folder.getRandomNewName("symlink_");
+			lostfound_folder.setChild(symlink_name, Nodes::FSTYPE_SYMLINK, metadata.hash, Nodes::FsMetadata());
+		 } else if (de.type == Nodes::TYPE_FILE) {
+			// File might be corrupted, so rebuild it.
+			Hpp::ByteV file_rebuilt_hash;
+			rebuildFile(file_rebuilt_hash, Nodes::File(de.data));
+			// Add the hash to ignored ones, to prevent it being noticed again.
+			ignored_nodes.insert(file_rebuilt_hash);
+			// Add node to "lost+found".
+			std::string file_name = lostfound_folder.getRandomNewName("file_");
+			lostfound_folder.setChild(file_name, Nodes::FSTYPE_FILE, file_rebuilt_hash, Nodes::FsMetadata());
+		 } else if (de.type == Nodes::TYPE_FOLDER) {
+			// Folder might be corrupted, so rebuild it.
+			Hpp::ByteV folder_rebuilt_hash = rebuildTreeRecursively(metadata.hash);
+			// Add the hash to ignored ones, to prevent it being noticed again.
+			ignored_nodes.insert(folder_rebuilt_hash);
+			// Add node to "lost+found".
+			std::string folder_name = lostfound_folder.getRandomNewName("folder_");
+			lostfound_folder.setChild(folder_name, Nodes::FSTYPE_FOLDER, folder_rebuilt_hash, Nodes::FsMetadata());
+		 }
+	}
+
+	// Now all important orphans are 100 % valid and stored to
+	// "lost+found". However lost is still just an object in RAM. Now
+	// its time to write it Node and then store to main tree.
+	spawnOrGetNode(&lostfound_folder);
+	root_folder.setChild(lostfound_name, Nodes::FSTYPE_FOLDER, lostfound_folder.getHash(), lostfound_fsmetadata);
+	spawnOrGetNode(&root_folder);
+
+	replaceRootNode(root_folder.getHash());
 }
 
 void Archive::writePasswordVerifier(Hpp::ByteV const& crypto_password_verifier)
@@ -2335,9 +2492,11 @@ void Archive::clearOrphanNodeRecursively(Hpp::ByteV const& hash,
 	     ++ children_it) {
 		Hpp::ByteV const& child_hash = children_it->hash;
 		// Get metadata
-		uint64_t child_metadata_loc;
 		HppAssert(child_hash.size() == NODE_HASH_SIZE, "Invalid hash size!");
-		Nodes::Metadata child_metadata = getNodeMetadata(child_hash, &child_metadata_loc);
+		int64_t child_metadata_loc = getNodeMetadataLocation(child_hash);
+		// If child does not exist, then ignore this silently.
+		if (child_metadata_loc < 0) continue;
+		Nodes::Metadata child_metadata = getNodeMetadata(child_metadata_loc);
 		// Reduce reference count
 		HppAssert(child_metadata.refs > 0, "Trying to reduce refrence count of child node below zero!");
 		-- child_metadata.refs;
@@ -2825,6 +2984,189 @@ void Archive::analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t m
 	if (metadata.child_big != Nodes::Metadata::NULL_REF) {
 		analyseSearchtreeDepth(result, metadata.child_big, depth + 1);
 	}
+}
+
+Hpp::ByteV Archive::rebuildTreeRecursively(Hpp::ByteV const& folder_hash)
+{
+	// Try to find Node of Folder
+	ssize_t metadata_loc = getNodeMetadataLocation(folder_hash);
+	// If folder is not found at all, then return empty folder
+	if (metadata_loc < 0) {
+		Nodes::Folder empty_folder;
+		spawnOrGetNode(&empty_folder);
+		return empty_folder.getHash();
+	}
+
+	// Build Folder object, that represent the
+	// Folder how it was before package broke.
+	Nodes::Metadata metadata = getMetadata(metadata_loc);
+	Nodes::Dataentry de = getDataentry(metadata.data_loc, true, true);
+	Nodes::Folder old_folder(de.data);
+
+	// Old Folder object is succesfully created. Now go
+	// all its children through, and try to save as many
+	// of them as possible to new Folder object.
+	Nodes::Folder new_folder;
+	for (std::string child_name = old_folder.getFirstChild();
+	     !child_name.empty();
+	     child_name = old_folder.getNextChild(child_name)) {
+
+		// Read properties of child
+		Nodes::FsType child_fstype = old_folder.getChildType(child_name);
+		Nodes::FsMetadata child_fsmetadata = old_folder.getChildFsMetadata(child_name);
+		Hpp::ByteV child_hash = old_folder.getChildHash(child_name);
+		ssize_t child_metadata_loc = getNodeMetadataLocation(child_hash);
+
+		// Now handle child according to its FS type.
+		if (child_fstype == Nodes::FSTYPE_FOLDER) {
+			// If folder is not found, then replace it with empty
+			// folder that has "CONTENT LOST" in its name.
+			if (child_metadata_loc == -1) {
+				// Generate replacing child
+				Nodes::Folder empty_folder;
+				spawnOrGetNode(&empty_folder);
+				std::string child_new_name = getFolderChildNameWithNote(child_name, "CONTENT LOST", &old_folder, &new_folder);
+				if (useroptions.verbose) *useroptions.verbose << "Found broken folder! Marking it down with name \"" << child_new_name << "\"!" << std::endl;
+				// Store new child
+				new_folder.setChild(child_new_name, Nodes::FSTYPE_FOLDER, empty_folder.getHash(), child_fsmetadata);
+			}
+			// Folder is okay, but its content must be checked too
+			else {
+				// Because errors reflect as far as to the root folder,
+				// it is best to always build folder from scratch
+				Hpp::ByteV new_child_hash = rebuildTreeRecursively(child_hash);
+
+				new_folder.setChild(child_name, Nodes::FSTYPE_FOLDER, new_child_hash, child_fsmetadata);
+			}
+		} else if (child_fstype == Nodes::FSTYPE_FILE) {
+			// If file is not found, then replace it with empty
+			// file that has "CONTENT LOST" in its name.
+			if (child_metadata_loc == -1) {
+				// Generate replacing child
+				Nodes::File empty_file;
+				spawnOrGetNode(&empty_file);
+				std::string child_new_name = getFolderChildNameWithNote(child_name, "CONTENT LOST", &old_folder, &new_folder);
+				if (useroptions.verbose) *useroptions.verbose << "Found broken file! Marking it down with name \"" << child_new_name << "\"!" << std::endl;
+				// Store new child
+				new_folder.setChild(child_new_name, Nodes::FSTYPE_FILE, empty_file.getHash(), child_fsmetadata);
+			}
+			// File is okay, but its content must be checked too
+			else {
+				// Read file
+				Nodes::Metadata file_metadata = getMetadata(child_metadata_loc);
+				Nodes::Dataentry file_de = getDataentry(file_metadata.data_loc, true, true);
+				Nodes::File file(file_de.data);
+
+				Hpp::ByteV final_file_hash;
+				bool all_datablocks_okay = rebuildFile(final_file_hash, file);
+
+				// If no datablocks are missing,
+				// then store original child
+				if (all_datablocks_okay) {
+					new_folder.setChild(child_name, Nodes::FSTYPE_FILE, final_file_hash, child_fsmetadata);
+				}
+				// Some datablocks are missing, so store
+				// file having "MISSING CONTENT" in its name.
+				else {
+					std::string child_new_name = getFolderChildNameWithNote(child_name, "MISSING CONTENT", &old_folder, &new_folder);
+					new_folder.setChild(child_new_name, Nodes::FSTYPE_FILE, final_file_hash, child_fsmetadata);
+				}
+			}
+		} else if (child_fstype == Nodes::FSTYPE_SYMLINK) {
+			// If symlink is not found, then replace it with empty
+			// file that has "CORRUPTED SYMLINK" in its name.
+			if (child_metadata_loc == -1) {
+				// Generate replacing child
+				Nodes::File empty_file;
+				spawnOrGetNode(&empty_file);
+				std::string child_new_name = getFolderChildNameWithNote(child_name, "CORRUPTED SYMLINK", &old_folder, &new_folder);
+				if (useroptions.verbose) *useroptions.verbose << "Found broken symlink! Marking it down with name \"" << child_new_name << "\"!" << std::endl;
+				// Store new child
+				new_folder.setChild(child_new_name, Nodes::FSTYPE_FILE, empty_file.getHash(), child_fsmetadata);
+			}
+			// Symlink is okay
+			else {
+				new_folder.setChild(child_name, child_fstype, child_hash, child_fsmetadata);
+			}
+		} else {
+			throw Hpp::Exception("Invalid child node type!");
+		}
+
+	}
+
+	// Finalize new folder creation and return hash
+	spawnOrGetNode(&new_folder);
+	return new_folder.getHash();
+}
+
+bool Archive::rebuildFile(Hpp::ByteV& result_hash, Nodes::File const& file)
+{
+	// Check if all datablocks exist
+	bool all_datablocks_okay = true;
+	for (size_t datablock_id = 0;
+	     datablock_id < file.getNumOfDatablocks();
+	     ++ datablock_id) {
+		Nodes::File::Datablock datablock = file.getDatablock(datablock_id);
+		if (getNodeMetadataLocation(datablock.hash) < 0) {
+			all_datablocks_okay = false;
+			break;
+		}
+	}
+
+	// If no datablocks are missing, then return original file
+	if (all_datablocks_okay) {
+		spawnOrGetNode(&file);
+		result_hash = file.getHash();
+		return true;
+	}
+
+	// Some datablocks are missing, so build new File
+	// object that has missing ones replaced with zeros.
+	Nodes::File new_file;
+	for (size_t datablock_id = 0;
+	     datablock_id < file.getNumOfDatablocks();
+	     ++ datablock_id) {
+		Nodes::File::Datablock datablock = file.getDatablock(datablock_id);
+		// If datablock is not missing
+		if (getNodeMetadataLocation(datablock.hash) >= 0) {
+			new_file.addDatablock(datablock.hash, datablock.size);
+		}
+		// If datablock is missing
+		else {
+			Hpp::ByteV zeros(datablock.size, 0);
+			Nodes::Datablock zeros_db(zeros);
+			spawnOrGetNode(&zeros_db);
+			new_file.addDatablock(zeros_db.getHash(), datablock.size);
+		}
+	}
+	spawnOrGetNode(&new_file);
+	result_hash = new_file.getHash();
+
+	return false;
+}
+
+std::string Archive::getFolderChildNameWithNote(std::string const& original_name,
+                                                std::string const& postfix,
+                                                Nodes::Folder const* folder1,
+                                                Nodes::Folder const* folder2)
+{
+	size_t name_suggestion_id = 1;
+	do {
+		std::string name_suggestion = original_name;
+		name_suggestion += " (" + postfix;
+		if (name_suggestion_id > 1) {
+			name_suggestion += " " + Hpp::sizeToStr(name_suggestion_id);
+		}
+		name_suggestion += ")";
+
+		if (!folder1->hasChild(name_suggestion) &&
+		    !folder2->hasChild(name_suggestion)) {
+			return name_suggestion;
+		}
+
+		++ name_suggestion_id;
+	} while(true);
+	return "";
 }
 
 void Archive::findRandomDataentries(SizeBySize& result, size_t max_to_find)

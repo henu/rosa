@@ -5,6 +5,7 @@
 #include "nodes/children.h"
 #include "nodes/node.h"
 #include "nodes/folder.h"
+#include "nodes/file.h"
 #include "nodes/metadata.h"
 #include "useroptions.h"
 #include "types.h"
@@ -101,6 +102,7 @@ public:
 
 	// Functions to fix stuff
 	void removeCorruptedNodesAndFixDataarea(void);
+	void rebuildTree(void);
 
 private:
 
@@ -249,6 +251,13 @@ private:
 	// goes to zero.
 	void replaceRootNode(Hpp::ByteV const& new_root);
 
+	// Gathers all but ignored orphan nodes under "/lost+found". If that
+	// path refers to non-folder, then "/lost+found 2" is tried and if that
+	// does not work either, then number is increased. Before adding stuff
+	// to "lost+found", they are rebuilt, so references to non-existing
+	// nodes can be cleaned.
+	void gatherOrphansToLostAndFound(ByteVSet ignored_nodes);
+
 
 	// ----------------------------------------
 	// Functions to do different writes
@@ -349,6 +358,26 @@ private:
 
 	// Recursively analyses nodes of searchtree.
 	void analyseSearchtreeDepth(SearchtreeDepthAnalysis& result, uint64_t metadata_loc, uint16_t depth);
+
+	// Rebuilds given folder Node recursively and returns
+	// its hash. Ignores all errors. When this is called,
+	// flag of orphan nodes must be toggled on.
+	Hpp::ByteV rebuildTreeRecursively(Hpp::ByteV const& folder_hash);
+
+	// Rebuilds given file Node by ensuring all its datablocks exist. If
+	// not, they are replaced with zeros. When this is called, flag of
+	// orphan nodes must be toggled on. Returns true if everything was fine
+	// and false if some datablocks were missing. "result_hash" is
+	// overwritten.
+	bool rebuildFile(Hpp::ByteV& result_hash, Nodes::File const& file);
+
+	// This function is used by "rebuildTreeRecursively()". It generates
+	// name that is not used by any child in two folders. Generated name
+	// will have given postfix in it.
+	static std::string getFolderChildNameWithNote(std::string const& original_name,
+	                                              std::string const& postfix,
+	                                              Nodes::Folder const* folder1,
+	                                              Nodes::Folder const* folder2);
 
 	// Helper function to find specific number of
 	// dataentry offsets and sizes. "result" is cleared.
