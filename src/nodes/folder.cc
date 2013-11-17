@@ -4,6 +4,7 @@
 
 #include <hpp/cast.h>
 #include <hpp/serialize.h>
+#include <hpp/random.h>
 
 namespace Nodes
 {
@@ -123,6 +124,16 @@ std::string Folder::getNextChild(std::string const& child_name) const
 		return "";
 	}
 	return children_find->first;
+}
+
+std::string Folder::getRandomNewName(std::string const& prefix) const
+{
+	do {
+		std::string random_name = prefix + Hpp::randomString(8).stl_string();
+		if (!hasChild(random_name)) {
+			return random_name;
+		}
+	} while (true);
 }
 
 void Folder::serialize(Hpp::ByteV& result) const

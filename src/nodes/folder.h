@@ -46,6 +46,9 @@ public:
 	std::string getFirstChild(void) const;
 	std::string getNextChild(std::string const& child_name) const;
 
+	// Generates random name that is not yet used.
+	std::string getRandomNewName(std::string const& prefix = "") const;
+
 private:
 
 	Children children;
