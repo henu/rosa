@@ -31,7 +31,7 @@ public:
 
 	// Datablock iterators
 	inline size_t getNumOfDatablocks(void) const { return datablocks.size(); }
-	inline Datablock getDatablock(size_t datablock_id) { HppAssert(datablock_id < datablocks.size(), "Overflow!"); return datablocks[datablock_id]; }
+	inline Datablock getDatablock(size_t datablock_id) const { HppAssert(datablock_id < datablocks.size(), "Overflow!"); return datablocks[datablock_id]; }
 
 private:
 
