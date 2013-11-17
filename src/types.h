@@ -3,12 +3,14 @@
 
 #include <map>
 #include <vector>
+#include <set>
 #include <hpp/path.h>
 #include <hpp/bytev.h>
 
 typedef std::vector< Hpp::Path > Paths;
 
 typedef std::vector< Hpp::ByteV > ByteVs;
+typedef std::set< Hpp::ByteV > ByteVSet;
 
 typedef std::map< size_t, size_t > SizeBySize;
 typedef std::multimap< size_t, size_t > SizeBySizeMulti;
