@@ -481,7 +481,7 @@ HppAssert(false, "Not implemented yet!");
 	} else if (action == ACTION_FIX) {
 		archiver.fix();
 	} else if (action == ACTION_OPTIMIZE) {
-		archiver.optimize(Hpp::Delay::days(9999));
+		archiver.optimize(Hpp::Delay::secs(0), true);
 	}
 
 }

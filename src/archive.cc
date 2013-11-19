@@ -474,7 +474,7 @@ void Archive::optimizeMetadata(void)
 	// TODO: Balance search tree!
 }
 
-void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
+void Archive::removeEmptyDataentries(Hpp::Time const& deadline, bool no_deadline)
 {
 	if (nodes_size == 0) {
 		return;
@@ -482,7 +482,20 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 
 	size_t last_known_not_empty = getSectionBegin(SECTION_DATA);
 
-	while (deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+	size_t last_progress_printed = 0;
+	*useroptions.verbose << "0 % ready." << '\xd';
+	useroptions.verbose->flush();
+
+	while ((no_deadline || deadline > Hpp::now()) && last_known_not_empty < datasec_end) {
+
+		if (no_deadline && useroptions.verbose) {
+			uint64_t progress = 100 * (last_known_not_empty - getSectionBegin(SECTION_DATA)) / (datasec_end - getSectionBegin(SECTION_DATA));
+			if (progress > last_progress_printed) {
+				*useroptions.verbose << progress << " % ready." << '\xd';
+				useroptions.verbose->flush();
+				last_progress_printed = progress;
+			}
+		}
 
 		// First pick fixed amount of non empty dataentries
 		// that are as far as possible from begin. There are also fixed
@@ -504,6 +517,16 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 				if (!de.empty) {
 					if (search == last_known_not_empty) {
 						last_known_not_empty += Nodes::Dataentry::HEADER_SIZE + de.size;
+
+						if (no_deadline && useroptions.verbose) {
+							uint64_t progress = 100 * (last_known_not_empty - getSectionBegin(SECTION_DATA)) / (datasec_end - getSectionBegin(SECTION_DATA));
+							if (progress > last_progress_printed) {
+								*useroptions.verbose << progress << " % ready." << '\xd';
+								useroptions.verbose->flush();
+								last_progress_printed = progress;
+							}
+						}
+
 					} else if (search > last_known_not_empty) {
 						des.insert(std::pair< size_t, size_t >(Nodes::Dataentry::HEADER_SIZE + de.size, search));
 					}
@@ -517,7 +540,7 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 
 		// Now try to find empty positions that could be filled with
 		// found dataentries. Prefer those that are at the beginning.
-		while (!des.empty() && deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+		while (!des.empty() && (no_deadline || deadline > Hpp::now()) && last_known_not_empty < datasec_end) {
 			findRandomDataentries(des_helper, REMOVE_EMPTIES_NUM_OF_SEARCH_HELPER_DATAENTRIES);
 			// Remove all helper dataentries that are at the area
 			// that is known to have no empty data entries.
@@ -537,13 +560,13 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 			// found dataentries, or if this is not possible,
 			// they are filled by moving the following
 			// dataentries towards begin.
-			while (!des.empty() && !des_helper.empty() && deadline > Hpp::now() && last_known_not_empty < datasec_end) {
+			while (!des.empty() && !des_helper.empty() && (no_deadline || deadline > Hpp::now()) && last_known_not_empty < datasec_end) {
 				size_t search = des_helper.begin()->first;
 				des_helper.erase(search);
 				bool updating_last_known_not_empty = (search == last_known_not_empty);
 
 				size_t iters_left = REMOVE_EMPTIES_EMPTY_FIND_ITERATIONS;
-				while (iters_left > 0/* && search < search_end*/ && search < datasec_end && deadline > Hpp::now()) {
+				while (iters_left > 0/* && search < search_end*/ && search < datasec_end && (no_deadline || deadline > Hpp::now())) {
 					-- iters_left;
 					Nodes::Dataentry de = getDataentry(search, false);
 					des_helper.erase(search);
@@ -601,10 +624,23 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline)
 					}
 					if (updating_last_known_not_empty) {
 						last_known_not_empty = search;
+
+						if (no_deadline && useroptions.verbose) {
+							uint64_t progress = 100 * (last_known_not_empty - getSectionBegin(SECTION_DATA)) / (datasec_end - getSectionBegin(SECTION_DATA));
+							if (progress > last_progress_printed) {
+								*useroptions.verbose << progress << " % ready." << '\xd';
+								useroptions.verbose->flush();
+								last_progress_printed = progress;
+							}
+						}
 					}
 				}
 			}
 		}
+	}
+
+	if (no_deadline && useroptions.verbose) {
+		*useroptions.verbose << "100 % ready." << std::endl;
 	}
 }
 

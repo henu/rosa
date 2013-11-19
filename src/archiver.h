@@ -31,8 +31,10 @@ public:
 	void list(Hpp::Path const& path, std::ostream* strm);
 
 	// Optimizes archive. This means sorting metadata, filling empty
-	// gaps in arrays, etc. "max_duration" is just an estimation.
-	void optimize(Hpp::Delay const& max_duration);
+	// gaps in arrays, etc. "max_duration" is just an estimation. If
+	// "no_max_duration" is set, then optimization is done completely
+	// without any time limits.
+	void optimize(Hpp::Delay const& max_duration, bool no_max_duration = false);
 
 	// Verfies everything is okay
 	void verify(Useroptions const& useroptions, bool fix_errors);

@@ -60,7 +60,7 @@ public:
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
 
-	void removeEmptyDataentries(Hpp::Time const& deadline);
+	void removeEmptyDataentries(Hpp::Time const& deadline, bool no_deadline);
 
 	// Reduces file size to minimum possible.
 	// Does nothing if journal exists.
@@ -106,7 +106,7 @@ public:
 
 private:
 
-	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 25000;
+	static size_t const REMOVE_ORPHANS_MAX_HASHES_IN_MEMORY = 500000;
 	static size_t const VERIFY_REFERENCES_MAX_CHECK_AMOUNT_PER_ITERATION = 500000;
 	static size_t const FIND_EMPTY_DATA_TRIES = 100;
 	static size_t const REMOVE_EMPTIES_NUM_OF_SEARCH_HELPER_DATAENTRIES = 1000;
