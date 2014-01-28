@@ -483,8 +483,10 @@ void Archive::removeEmptyDataentries(Hpp::Time const& deadline, bool no_deadline
 	size_t last_known_not_empty = getSectionBegin(SECTION_DATA);
 
 	size_t last_progress_printed = 0;
-	*useroptions.verbose << "0 % ready." << '\xd';
-	useroptions.verbose->flush();
+	if (no_deadline && useroptions.verbose) {
+		*useroptions.verbose << "0 % ready." << '\xd';
+		useroptions.verbose->flush();
+	}
 
 	while ((no_deadline || deadline > Hpp::now()) && last_known_not_empty < datasec_end) {
 
