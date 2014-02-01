@@ -32,9 +32,9 @@ mv Makefile.ORIGINAL Makefile
 echo "Obtaining test data"
 rm -rf testdata
 mkdir testdata
-wget http://mercurial.selenic.com/release/mercurial-1.7.4.tar.gz -O testdata/1.tgz
-wget http://mercurial.selenic.com/release/mercurial-2.1.2.tar.gz -O testdata/2.tgz
-wget http://mercurial.selenic.com/release/mercurial-2.2.3.tar.gz -O testdata/3.tgz
+wget http://storage.henu.fi/rosa/testdata/mercurial-1.7.4.tar.gz -O testdata/1.tgz
+wget http://storage.henu.fi/rosa/testdata/mercurial-2.1.2.tar.gz -O testdata/2.tgz
+wget http://storage.henu.fi/rosa/testdata/mercurial-2.2.3.tar.gz -O testdata/3.tgz
 
 echo "Extracting test data"
 cd testdata
