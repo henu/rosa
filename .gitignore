@@ -1,0 +1,5 @@
+/bin/*
+/rosa.pro*
+*.o
+/rosa
+/testdata
