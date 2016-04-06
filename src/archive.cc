@@ -148,7 +148,7 @@ void Archive::put(Paths const& src, Hpp::Path const& dest)
 	// The following operations will create new Nodes,
 	// that will be orphans at first. Because of this,
 	// the appropriate flag needs to be toggled on.
-	bool orphan_nodes_flag_before = getOrphanNodesFlag();
+	bool orphan_nodes_flag_before = orphan_nodes_exists;
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
 	io.deinitWrite();
@@ -299,7 +299,7 @@ void Archive::remove(Paths const& paths)
 	// The following operations will create new Nodes,
 	// that will be orphans at first. Because of this,
 	// the appropriate flag needs to be toggled on.
-	bool orphan_nodes_flag_before = getOrphanNodesFlag();
+	bool orphan_nodes_flag_before = orphan_nodes_exists;
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
 	io.deinitWrite();
@@ -371,7 +371,7 @@ void Archive::createNewFolders(Paths paths, Nodes::FsMetadata const& fsmetadata)
 	// The following operations will create new Nodes,
 	// that will be orphans at first. Because of this,
 	// the appropriate flag needs to be toggled on.
-	bool orphan_nodes_flag_before = getOrphanNodesFlag();
+	bool orphan_nodes_flag_before = orphan_nodes_exists;
 	io.initWrite(false);
 	setOrphanNodesFlag(true);
 	io.deinitWrite();
@@ -2383,7 +2383,7 @@ void Archive::spawnOrGetNode(Nodes::Node const* node)
 	}
 
 	// Ensure flag of orphan nodes is enabled
-	if (!getOrphanNodesFlag()) {
+	if (!orphan_nodes_exists) {
 		throw Hpp::Exception("Flag of orphan nodes should be enabled, if you try to spawn completely new Nodes!");
 	}
 

@@ -22,7 +22,7 @@ archive(read_write_mode, useroptions)
 	archive.finishPossibleInterruptedJournal();
 
 	// Possible orphans are fixed only in read write mode
-	if (read_write_mode && !do_not_remove_possible_orphans) {
+	if (read_write_mode && !do_not_remove_possible_orphans && archive.getOrphanNodesFlag()) {
 		archive.removePossibleOrphans();
 	}
 
