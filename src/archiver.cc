@@ -4,7 +4,7 @@
 #include "exceptions/alreadyexists.h"
 
 Archiver::Archiver(Hpp::Path const& path, std::string const& password,
-                   bool create_if_does_not_exist, bool read_write_mode, bool do_not_remove_possible_orphans,
+                   bool create_if_does_not_exist, bool read_write_mode,
                    Useroptions const& useroptions) :
 archive(read_write_mode, useroptions)
 {
@@ -20,12 +20,6 @@ archive(read_write_mode, useroptions)
 	// Journal is always fixed. In read only
 	// mode, it is fixed to read cache.
 	archive.finishPossibleInterruptedJournal();
-
-	// Possible orphans are fixed only in read write mode
-	if (read_write_mode && !do_not_remove_possible_orphans && archive.getOrphanNodesFlag()) {
-		archive.removePossibleOrphans();
-	}
-
 }
 
 void Archiver::printDebugInformation(std::ostream* strm)
@@ -116,7 +110,6 @@ void Archiver::printDebugInformation(std::ostream* strm)
 	(*strm) << "Directory structure:" << std::endl;
 	(*strm) << "* <root>" << std::endl;
 	recursivelyPrintChildren(archive.getRootReference(), "", strm);
-
 }
 
 void Archiver::put(Paths const& src, Hpp::Path const& dest)
@@ -139,6 +132,13 @@ void Archiver::get(Paths const& sources, Hpp::Path const& dest)
 void Archiver::list(Hpp::Path const& path, std::ostream* strm)
 {
 	archive.list(path, strm);
+}
+
+void Archiver::removePossibleOrphans()
+{
+	if (archive.getOrphanNodesFlag()) {
+		archive.removePossibleOrphans();
+	}
 }
 
 void Archiver::remove(Paths const& paths)

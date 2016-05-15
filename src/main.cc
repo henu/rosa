@@ -419,8 +419,9 @@ void run(int argc, char** argv)
 		do_not_remove_possible_orphans = true;
 	}
 
-	Archiver archiver(archive, password, create_if_does_not_exist, read_write_mode, do_not_remove_possible_orphans, useroptions);
+	Archiver archiver(archive, password, create_if_does_not_exist, read_write_mode, useroptions);
 
+	// Actions that should be done before orphan removing
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
 		Hpp::Time start_time = Hpp::now();
@@ -476,14 +477,20 @@ HppAssert(false, "Not implemented yet!");
 		}
 	} else if (action == ACTION_DEBUG) {
 		archiver.printDebugInformation(&std::cout);
-	} else if (action == ACTION_VERIFY) {
-		archiver.verify(useroptions, false);
 	} else if (action == ACTION_FIX) {
 		archiver.fix();
+	}
+
+	if (!read_write_mode && !do_not_remove_possible_orphans) {
+		archiver.removePossibleOrphans();
+	}
+
+	// Actions that should be done after orphan removing
+	if (action == ACTION_VERIFY) {
+		archiver.verify(useroptions, false);
 	} else if (action == ACTION_OPTIMIZE) {
 		archiver.optimize(Hpp::Delay::secs(0), true);
 	}
-
 }
 
 int main(int argc, char** argv)
