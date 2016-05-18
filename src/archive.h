@@ -60,7 +60,7 @@ public:
 	// Functions to optimize archive.
 	void optimizeMetadata(void);
 
-	void removeEmptyDataentries(Hpp::Time const& deadline, bool no_deadline);
+	void removeEmptyDataentries();
 
 	// Reduces file size to minimum possible.
 	// Does nothing if journal exists.

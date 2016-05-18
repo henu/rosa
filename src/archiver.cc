@@ -163,10 +163,12 @@ void Archiver::snapshot(std::string const& snapshot, Paths const& sources)
 	archive.shrinkFileToMinimumPossible();
 }
 
-void Archiver::optimize(Hpp::Delay const& max_duration, bool no_max_duration)
+void Archiver::optimize(bool remove_empty_dataentries)
 {
 	archive.optimizeMetadata();
-	archive.removeEmptyDataentries(Hpp::now() + max_duration, no_max_duration);
+	if (remove_empty_dataentries) {
+		archive.removeEmptyDataentries();
+	}
 	archive.shrinkFileToMinimumPossible();
 }
 

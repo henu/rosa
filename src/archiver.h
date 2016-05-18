@@ -32,11 +32,8 @@ public:
 
 	void removePossibleOrphans();
 
-	// Optimizes archive. This means sorting metadata, filling empty
-	// gaps in arrays, etc. "max_duration" is just an estimation. If
-	// "no_max_duration" is set, then optimization is done completely
-	// without any time limits.
-	void optimize(Hpp::Delay const& max_duration, bool no_max_duration = false);
+	// Optimizes archive. This means sorting metadata, etc.
+	void optimize(bool remove_empty_dataentries);
 
 	// Verfies everything is okay
 	void verify(Useroptions const& useroptions, bool fix_errors);

@@ -17,9 +17,6 @@ size_t stringToCachesize(std::string const& str);
 
 void run(int argc, char** argv)
 {
-	// Maximum optimizing delay when optimization is not requested
-	Hpp::Delay const MAXIMUM_OPTIMIZING_DELAY = Hpp::Delay::mins(5);
-
 	// Use arguments to initialize random number generator. This helps
 	// program to behave in same way every time it is ran in exactly same
 	// conditions (i.e. archive file in same state, arguments same, etc.).
@@ -424,16 +421,14 @@ void run(int argc, char** argv)
 	// Actions that should be done before orphan removing
 	if (action == ACTION_PUT) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
-		Hpp::Time start_time = Hpp::now();
 		archiver.put(sources, targets[0]);
-		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
+		archiver.optimize(false);
 	} else if (action == ACTION_GET) {
 		HppAssert(targets.size() == 1, "Expecting exactly one target!");
 		archiver.get(sources, targets[0]);
 	} else if (action == ACTION_REMOVE) {
-		Hpp::Time start_time = Hpp::now();
 		archiver.remove(targets);
-		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
+		archiver.optimize(false);
 	} else if (action == ACTION_MOVE) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
@@ -448,18 +443,15 @@ HppAssert(false, "Not implemented yet!");
 			}
 		}
 	} else if (action == ACTION_MKDIR) {
-		Hpp::Time start_time = Hpp::now();
 		archiver.createNewFolders(targets, fsmetadata);
-		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
+		archiver.optimize(false);
 	} else if (action == ACTION_SNAPSHOT) {
-		Hpp::Time start_time = Hpp::now();
 		archiver.snapshot(snapshot, sources);
-		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
+		archiver.optimize(false);
 	} else if (action == ACTION_DESTROY) {
 		targets = Paths(1, Hpp::Path::getRoot() / snapshot);
-		Hpp::Time start_time = Hpp::now();
 		archiver.remove(targets);
-		archiver.optimize(std::min(Hpp::now() - start_time, MAXIMUM_OPTIMIZING_DELAY));
+		archiver.optimize(false);
 	} else if (action == ACTION_RENAME) {
 // TODO: Code this!
 HppAssert(false, "Not implemented yet!");
@@ -489,7 +481,7 @@ HppAssert(false, "Not implemented yet!");
 	if (action == ACTION_VERIFY) {
 		archiver.verify(useroptions, false);
 	} else if (action == ACTION_OPTIMIZE) {
-		archiver.optimize(Hpp::Delay::secs(0), true);
+		archiver.optimize(true);
 	}
 }
 
